@@ -174,8 +174,23 @@ static void user_find_cb(esp_zb_zdp_status_t zdo_status, uint16_t peer_addr, uin
         esp_zb_get_long_address(bind_req->dst_address_u.addr_long);
         bind_req->dst_endp = HA_THERMOSTAT_ENDPOINT;
 
-        ESP_LOGI(TAG, "Request temperature sensor to bind us");
+        ESP_LOGI(TAG, "Request temperature sensor to bind us (temperature)");
         esp_zb_zdo_device_bind_req(bind_req, bind_cb, bind_req);
+
+        /* 1.A. Send binding request to the sensor for the CUSTOM CLUSTER */
+        esp_zb_zdo_bind_req_param_t *custom_bind_req = (esp_zb_zdo_bind_req_param_t *)calloc(1, sizeof(esp_zb_zdo_bind_req_param_t));
+        custom_bind_req->req_dst_addr = peer_addr;
+
+        memcpy(custom_bind_req->src_address, sensor->ieee_addr, sizeof(esp_zb_ieee_addr_t));
+        custom_bind_req->src_endp = peer_endpoint;
+        custom_bind_req->cluster_id = 0xFF01; /* CUSTOM_CLUSTER_ID */
+
+        custom_bind_req->dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
+        esp_zb_get_long_address(custom_bind_req->dst_address_u.addr_long);
+        custom_bind_req->dst_endp = HA_THERMOSTAT_ENDPOINT;
+
+        ESP_LOGI(TAG, "Request temperature sensor to bind us (custom cluster)");
+        esp_zb_zdo_device_bind_req(custom_bind_req, bind_cb, custom_bind_req);
 
         /* 2. Send binding request to self */
         bind_req = (esp_zb_zdo_bind_req_param_t *)calloc(1, sizeof(esp_zb_zdo_bind_req_param_t));
@@ -337,6 +352,22 @@ static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_a
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
             uint16_t tolerance = attribute->data.value ? *(uint16_t *)attribute->data.value : 0;
             ESP_LOGI(TAG, "Tolerance is %.2f degrees Celsius", 1.0 * tolerance / 100);
+        }
+    }
+
+    /* Custom cluster attributes reporting */
+    if (cluster_id == 0xFF01) {
+        if (attribute->id == 0x000A) { /* battery_voltage */
+            uint8_t value = attribute->data.value ? *(uint8_t *)attribute->data.value : 0;
+            ESP_LOGI(TAG, "Custom Cluster 0xFF01: battery_voltage reported as %d", value);
+        }
+        if (attribute->id == 0x0004) { /* current_ua */
+            uint16_t value = attribute->data.value ? *(uint16_t *)attribute->data.value : 0;
+            ESP_LOGI(TAG, "Custom Cluster 0xFF01: current_ua reported as %d", value);
+        }
+        if (attribute->id == 0x0001) { /* gnss_sats */
+            uint8_t value = attribute->data.value ? *(uint8_t *)attribute->data.value : 0;
+            ESP_LOGI(TAG, "Custom Cluster 0xFF01: gnss_sats reported as %d", value);
         }
     }
 }
