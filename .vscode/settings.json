@@ -5,6 +5,15 @@
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32c6"
   },
-  "idf.portWin": "COM9",
-  "idf.flashType": "JTAG"
+  "idf.portWin": "COM4",
+  "idf.flashType": "JTAG",
+  "idf.currentSetup": "C:\\Users\\User\\esp\\v5.4.2\\esp-idf",
+  "idf.buildPath": "C:/esp_builds/wsn_coordinator_build",
+  "idf.buildPathWin": "C:/esp_builds/wsn_coordinator_build",
+  "clangd.path": "C:\\Users\\User\\.espressif\\tools\\esp-clang\\esp-18.1.2_20240912\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=C:/esp_builds/wsn_coordinator_build"
+  ]
 }

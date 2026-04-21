@@ -357,18 +357,22 @@ static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_a
 
     /* Custom cluster attributes reporting */
     if (cluster_id == 0xFF01) {
+        uint8_t battery_voltage = 0;
+        uint16_t current_ua = 0;
+        uint8_t gnss_sats = 0;
         if (attribute->id == 0x000A) { /* battery_voltage */
-            uint8_t value = attribute->data.value ? *(uint8_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Custom Cluster 0xFF01: battery_voltage reported as %d", value);
+            battery_voltage = attribute->data.value ? *(uint8_t *)attribute->data.value : 0;
+            //ESP_LOGI(TAG, "Custom Cluster 0xFF01: battery_voltage reported as %d", battery_voltage);
         }
         if (attribute->id == 0x0004) { /* current_ua */
-            uint16_t value = attribute->data.value ? *(uint16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Custom Cluster 0xFF01: current_ua reported as %d", value);
+            current_ua = attribute->data.value ? *(uint16_t *)attribute->data.value : 0;
+            //ESP_LOGI(TAG, "Custom Cluster 0xFF01: current_ua reported as %d", current_ua);
         }
         if (attribute->id == 0x0001) { /* gnss_sats */
-            uint8_t value = attribute->data.value ? *(uint8_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Custom Cluster 0xFF01: gnss_sats reported as %d", value);
+            gnss_sats = attribute->data.value ? *(uint8_t *)attribute->data.value : 0;
+            //ESP_LOGI(TAG, "Custom Cluster 0xFF01: gnss_sats reported as %d", gnss_sats);
         }
+        ESP_LOGI(TAG, "Custom Cluster 0xFF01: battery_voltage=%d, current_ua=%d, gnss_sats=%d", battery_voltage, current_ua, gnss_sats);
     }
 }
 
@@ -377,9 +381,9 @@ static esp_err_t zb_attribute_reporting_handler(const esp_zb_zcl_report_attr_mes
     ESP_RETURN_ON_FALSE(message, ESP_FAIL, TAG, "Empty message");
     ESP_RETURN_ON_FALSE(message->status == ESP_ZB_ZCL_STATUS_SUCCESS, ESP_ERR_INVALID_ARG, TAG, "Received message: error status(%d)",
                         message->status);
-    ESP_LOGI(TAG, "Received report from address(0x%x) src endpoint(%d) to dst endpoint(%d) cluster(0x%x)",
-             message->src_address.u.short_addr, message->src_endpoint,
-             message->dst_endpoint, message->cluster);
+    // ESP_LOGI(TAG, "Received report from address(0x%x) src endpoint(%d) to dst endpoint(%d) cluster(0x%x)",
+    //          message->src_address.u.short_addr, message->src_endpoint,
+    //          message->dst_endpoint, message->cluster);
     esp_app_zb_attribute_handler(message->cluster, &message->attribute);
     return ESP_OK;
 }
