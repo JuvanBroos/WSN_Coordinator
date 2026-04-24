@@ -97,7 +97,7 @@ static const char *custom_attr_name(uint16_t attr_id)
     }
 }
 
-static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute)
+static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute, uint16_t src_address)
 {
     const char *attr_name = custom_attr_name(attribute->id);
 
@@ -110,7 +110,7 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     case ATTR_GNSS_SATS:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U8) {
             uint8_t value = *(uint8_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u", attr_name, attribute->id, value);
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U8, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
@@ -121,8 +121,8 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     case ATTR_LONGITUDE:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S32) {
             int32_t value = *(int32_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, S32): %" PRId32,
-                     attr_name, attribute->id, value);
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, S32): %" PRId32 ", from 0x%04x",
+                     attr_name, attribute->id, value, src_address);
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected S32, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
@@ -132,7 +132,7 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     case ATTR_CURRENT_UA:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
             uint16_t value = *(uint16_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u uA", attr_name, attribute->id, value);
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u uA, from 0x%04x", attr_name, attribute->id, value, src_address);
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U16, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
@@ -144,7 +144,7 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     case ATTR_ACCEL_Z:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
             int16_t value = *(int16_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, S16): %d", attr_name, attribute->id, value);
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, S16): %d, from 0x%04x", attr_name, attribute->id, value, src_address);
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected S16, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
@@ -154,7 +154,7 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     case ATTR_BATTERY_VOLTAGE:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U8) {
             uint8_t value = *(uint8_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u", attr_name, attribute->id, value);
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U8, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
@@ -419,7 +419,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     }
 }
 
-static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_attribute_t* attribute)
+static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_attribute_t* attribute, uint16_t src_address)
 {
     /* Basic cluster attributes */
     if (cluster_id == ESP_ZB_ZCL_CLUSTER_ID_BASIC) {
@@ -450,7 +450,7 @@ static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_a
         if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID &&
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
             int16_t value = attribute->data.value ? *(int16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Measured Value is %.2f V", value / 1000.0);
+            //ESP_LOGI(TAG, "Measured Value is %.2f V", value / 1000.0);
         }
         if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MIN_VALUE_ID &&
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
@@ -471,7 +471,7 @@ static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_a
 
     /* Custom cluster attributes reporting */
     if (cluster_id == CUSTOM_CLUSTER_ID) {
-        log_custom_cluster_attribute(attribute);
+        log_custom_cluster_attribute(attribute, src_address);
     }
 }
 
@@ -484,12 +484,14 @@ static esp_err_t zb_attribute_reporting_handler(const esp_zb_zcl_report_attr_mes
     //          message->src_address.u.short_addr, message->src_endpoint,
     //          message->dst_endpoint, message->cluster, message->attribute.id,
     //          message->attribute.data.type);
-    if (message->cluster == ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT){
-        esp_zb_ieee_addr_t ieee_addr;
-        esp_zb_ieee_address_by_short(message->src_address.u.short_addr, ieee_addr);
-        ESP_LOGI(TAG, "Message from "ZB_MACSTR"", ZB_MAC2STR(ieee_addr));
-    }
-    esp_app_zb_attribute_handler(message->cluster, &message->attribute);
+    // if (message->cluster == ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT){
+    //     esp_zb_ieee_addr_t ieee_addr;
+    //     esp_zb_ieee_address_by_short(message->src_address.u.short_addr, ieee_addr);
+    //     ESP_LOGI(TAG, "Message from "ZB_MACSTR"", ZB_MAC2STR(ieee_addr));
+    // }
+
+    /* Uncomment this when we want to work with the handler again*/
+    esp_app_zb_attribute_handler(message->cluster, &message->attribute, message->src_address.u.short_addr);
     return ESP_OK;
 }
 
@@ -509,7 +511,7 @@ static esp_err_t zb_read_attr_resp_handler(const esp_zb_zcl_cmd_read_attr_resp_m
              variable->status, message->info.cluster,
              variable->attribute.id, variable->attribute.data.type);
         if (variable->status == ESP_ZB_ZCL_STATUS_SUCCESS) {
-            esp_app_zb_attribute_handler(message->info.cluster, &variable->attribute);
+            esp_app_zb_attribute_handler(message->info.cluster, &variable->attribute, message->info.src_address.u.short_addr);
         }
 
         variable = variable->next;
