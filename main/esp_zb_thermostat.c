@@ -366,7 +366,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                 ESP_LOGI(TAG, "Start network formation");
                 esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_FORMATION);
             } else {
-                esp_zb_bdb_open_network(180);
+                esp_zb_bdb_open_network(0xFF);
                 ESP_LOGI(TAG, "Device rebooted");
             }
         } else {
@@ -485,7 +485,9 @@ static esp_err_t zb_attribute_reporting_handler(const esp_zb_zcl_report_attr_mes
     //          message->dst_endpoint, message->cluster, message->attribute.id,
     //          message->attribute.data.type);
     if (message->cluster == ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT){
-        ESP_LOGI(TAG, "Message from "ZB_MACSTR"", ZB_MAC2STR(message->src_address.u.ieee_addr));
+        esp_zb_ieee_addr_t ieee_addr;
+        esp_zb_ieee_address_by_short(message->src_address.u.short_addr, ieee_addr);
+        ESP_LOGI(TAG, "Message from "ZB_MACSTR"", ZB_MAC2STR(ieee_addr));
     }
     esp_app_zb_attribute_handler(message->cluster, &message->attribute);
     return ESP_OK;
