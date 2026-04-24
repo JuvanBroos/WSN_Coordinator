@@ -12,7 +12,7 @@
  * CONDITIONS OF ANY KIND, either express or implied.
  */
 
-#include "esp_zb_thermostat.h"
+#include "zigbee_task.h"
 //#include "switch_driver.h"
 
 #include "string.h"
@@ -582,8 +582,14 @@ static esp_zb_ep_list_t *custom_thermostat_ep_create(uint8_t endpoint_id, esp_zb
     return ep_list;
 }
 
-static void esp_zb_task(void *pvParameters)
+void esp_zb_task(void *pvParameters)
 {
+    esp_zb_platform_config_t config = {
+        .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
+        .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
+    };
+    ESP_ERROR_CHECK(esp_zb_platform_config(&config));
+
     /* Initialize Zigbee stack */
     esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ZC_CONFIG();
     esp_zb_init(&zb_nwk_cfg);
@@ -599,15 +605,4 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_set_primary_network_channel_set(ESP_ZB_PRIMARY_CHANNEL_MASK);
     ESP_ERROR_CHECK(esp_zb_start(false));
     esp_zb_stack_main_loop();
-}
-
-void app_main(void)
-{
-    esp_zb_platform_config_t config = {
-        .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
-        .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
-    };
-    ESP_ERROR_CHECK(nvs_flash_init());
-    ESP_ERROR_CHECK(esp_zb_platform_config(&config));
-    xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 }

@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS
-    "esp_zb_thermostat.c"
-    INCLUDE_DIRS "."
+    "app_main.c"
+    "zigbee_task/zigbee_task.c"
+    INCLUDE_DIRS "." "zigbee_task"
 )

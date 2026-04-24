@@ -11,7 +11,13 @@
  * software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
  * CONDITIONS OF ANY KIND, either express or implied.
  */
+#pragma once
+
 #include "esp_zigbee_core.h"
+
+void start_zigbee_task(void);
+void esp_zb_task(void *pvParameters);
+
 
 /* Zigbee configuration */
 #define MAX_CHILDREN                    10          /* the max amount of connected devices */
