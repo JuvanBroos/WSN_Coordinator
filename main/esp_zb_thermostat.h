@@ -25,6 +25,9 @@
 #define MANUFACTURER_NAME               "\x09""ESPRESSIF"
 #define MODEL_IDENTIFIER                "\x07"CONFIG_IDF_TARGET
 
+#define ZB_MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5], (a)[6], (a)[7]
+#define ZB_MACSTR "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x"
+
 #define ESP_ZB_ZC_CONFIG()                                                              \
     {                                                                                   \
         .esp_zb_role = ESP_ZB_DEVICE_TYPE_COORDINATOR,                                  \
