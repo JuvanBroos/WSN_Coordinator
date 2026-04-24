@@ -1,99 +1,78 @@
-| Supported Targets | ESP32-H2 | ESP32-C6 | ESP32-C5 |
-| ----------------- | -------- | -------- | -------- |
+# Wireless Sensor Network (WSN) Coordinator
 
-# Thermostat Example
+This repository implements a robust Zigbee Coordinator for a Wireless Sensor Network (WSN) running on an ESP32-C6. Acting as the central gateway, it discovers, pairs, and receives telemetry data from remote sensor nodes using a custom Zigbee cluster (0xFF01).
 
-This example demonstrates how to configure a Home Automation thermostat on a Zigbee Coordinator.
+## System Overview
+
+Unlike standard Home Automation examples, this project is customized to continuously listen for structured telemetry updates from End Devices. These custom attributes map real-world embedded sensor data:
+- **Location Data**: GNSS Satellite count, Latitude, Longitude.
+- **Power Analytics**: Instantaneous Current (µA), Battery Voltage.
+- **Inertial Data**: X, Y, Z axis readings from an accelerometer.
+- **System Metrics**: Sleep intervals and active Protocol sets.
 
 ## Hardware Required
 
-* One 802.15.4 enabled development board (e.g., ESP32-H2 or ESP32-C6) running this example.
-* A second board running as a Zigbee end-device (see [HA_temperature_sensor](../HA_temperature_sensor) example)
+* 1x **ESP32-C6** Development Board (Target configured as the Coordinator Gateway).
+* At least 1x Zigbee End Device running compatible firmware (broadcasting custom cluster attributes).
+* USB connection to a host PC for monitoring and log parsing.
 
-## Configure the project
+## Setup & Configuration
 
-Before project configuration and build, make sure to set the correct chip target using `idf.py set-target TARGET` command.
+This project is built using ESP-IDF v5.0+ and relies on the Espressif ZBOSS and Zigbee SDK libraries (`~1.6.0`).
 
-## Erase the NVRAM
+1. Set the correct target architecture for ESP32-C6:
+   ```bash
+   idf.py set-target esp32c6
+   ```
 
-Before flash it to the board, it is recommended to erase NVRAM if user doesn't want to keep the previous examples or other projects stored info
-using `idf.py -p PORT erase-flash`
+2. Clean non-volatile storage (NVRAM) state. It is highly recommended to erase the flash to ensure there's no legacy networking data interfering with the formation of the new Zigbee network:
+   ```bash
+   idf.py -p PORT erase-flash
+   ```
 
-## Build and Flash
+3. Build and flash the firmware:
+   ```bash
+   idf.py -p PORT build flash
+   ```
 
-Build the project, flash it to the board, and start the monitor tool to view the serial output by running `idf.py -p PORT flash monitor`.
+## Application Flow & Data Acquisition
 
-(To exit the serial monitor, type ``Ctrl-]``.)
+Upon boot, the Coordinator initializes the Zigbee stack, operates as a Trust Center, and forms an open PAN network. When remote end devices successfully associate and bind to the Coordinator, they begin reporting scheduled telemetry data.
 
-## Application Functions
+The C code intercepts these responses safely within the `esp_zb_task` thread. Attributes matching the `CUSTOM_CLUSTER_ID` (0xFF01) are explicitly parsed against defined IDs (`ATTR_GNSS_SATS`, `ATTR_LATITUDE`, `ATTR_CURRENT_UA`, etc.). The data payload is unpackaged based on its native Zigbee data type (e.g. `U8`, `U16`, `S16`, `S32`) and logged safely via serial.
 
-- When the program starts, the board, acting as a Zigbee Coordinator with the `Home Automation Thermostat` function, will form an open network within 180 seconds.
-```
-I (497) main_task: Returned from app_main()
-I (627) ESP_ZB_THERMOSTAT: ZDO signal: ZDO Config Ready (0x17), status: ESP_FAIL
-I (627) ESP_ZB_THERMOSTAT: Initialize Zigbee stack
-I (637) ESP_ZB_THERMOSTAT: Device started up in  factory-reset mode
-I (637) ESP_ZB_THERMOSTAT: Start network formation
-W (797) ESP_ZB_THERMOSTAT: Network(0xbcc7) closed, devices joining not allowed.
-I (797) ESP_ZB_THERMOSTAT: Formed network successfully (Extended PAN ID: 74:4d:bd:ff:fe:60:2d:57, PAN ID: 0xbcc7, Channel:13, Short Address: 0x0000)
-I (1397) ESP_ZB_THERMOSTAT: Network(0xbcc7) is open for 180 seconds
-I (1397) ESP_ZB_THERMOSTAT: Network steering started
-```
+## Python Monitoring Tools
 
-- If a Zigbee device with the `Home Automation Temperature Sensor` function joins the network, the board read its manufacturer code and model then add it to
-  the binding table.
-```
-I (4637) ESP_ZB_THERMOSTAT: ZDO signal: NWK Device Associated (0x12), status: ESP_OK
-I (5157) ESP_ZB_THERMOSTAT: ZDO signal: ZDO Device Update (0x30), status: ESP_OK
-I (5187) ESP_ZB_THERMOSTAT: New device commissioned or rejoined (short: 0xe6d0)
-I (5257) ESP_ZB_THERMOSTAT: Found temperature sensor
-I (5257) ESP_ZB_THERMOSTAT: Request temperature sensor to bind us
-I (5267) ESP_ZB_THERMOSTAT: Bind temperature sensor
-I (5277) ESP_ZB_THERMOSTAT: Successfully bind the temperature sensor from address(0xe6d0) on endpoint(10)
-I (5397) ESP_ZB_THERMOSTAT: ZDO signal: NLME Status Indication (0x32), status: ESP_OK
-I (5417) ESP_ZB_THERMOSTAT: The temperature sensor from address(0xe6d0) on endpoint(10) successfully binds us
-I (7207) ESP_ZB_THERMOSTAT: Received report from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (7207) ESP_ZB_THERMOSTAT: Measured Value is 24.00 degrees Celsius
-I (8367) ESP_ZB_THERMOSTAT: Read attribute response: from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x0)
-I (8367) ESP_ZB_THERMOSTAT: Read attribute response: status(0), cluster(0x0), attribute(0x4), type(0x42), value(11)
-I (8387) ESP_ZB_THERMOSTAT: Peer Manufacturer is "ESPRESSIF"
-I (8387) ESP_ZB_THERMOSTAT: Read attribute response: status(0), cluster(0x0), attribute(0x5), type(0x42), value(9)
-I (8397) ESP_ZB_THERMOSTAT: Peer Model is "esp32h2"
-I (10317) ESP_ZB_THERMOSTAT: ZDO signal: ZDO Device Authorized (0x2f), status: ESP_OK
-I (10347) ESP_ZB_THERMOSTAT: Network(0xbcc7) is open for 180 seconds
+Due to continuous data streams across multiple nodes, raw serial feeds can be overwhelming. To evaluate node telemetry effectively, two monitoring tools are included alongside the C project.
+
+### Dependencies
+Ensure you have the required Python dependencies installed:
+```bash
+pip install pyserial customtkinter
 ```
 
-- By clicking the `BOOT` button on this board, it will read the temperature value, temperature measurement range, and temperature tolerance from the
-  remote board. Additionally, it will configure the remote temperature sensor to report the measured temperature value every 10 seconds or whenever
-  there is a 2-degree change.
+### 1. GUI Monitor (`gui_monitor.py`)
+Provides a rich Graphical User Interface built on `customtkinter`. It dynamically generates tabular structures reflecting active remote nodes based on incoming serial logs, rendering real-time updates for:
+- Sensor IDs and their network timestamps.
+- Columnar visualization of custom attribute metrics continually updated upon serial reception.
+
+**Usage:**
+*(Replace `COMx` with your specific serial port)*
+```bash
+python gui_monitor.py -p COMx -b 115200
 ```
-I (11207) ESP_ZB_THERMOSTAT: Received report from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (11207) ESP_ZB_THERMOSTAT: Measured Value is 25.00 degrees Celsius
-I (12267) ESP_ZB_THERMOSTAT: Received report from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (12267) ESP_ZB_THERMOSTAT: Measured Value is 24.00 degrees Celsius
-I (16207) ESP_ZB_THERMOSTAT: Received report from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (16207) ESP_ZB_THERMOSTAT: Measured Value is 25.00 degrees Celsius
-I (19417) ESP_ZB_THERMOSTAT: Received report from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (19417) ESP_ZB_THERMOSTAT: Measured Value is 25.00 degrees Celsius
-I (20467) ESP_ZB_THERMOSTAT: Received report from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (20467) ESP_ZB_THERMOSTAT: Measured Value is 25.00 degrees Celsius
-I (22947) ESP_ZB_THERMOSTAT: Send 'configure reporting' command
-I (22947) ESP_ZB_THERMOSTAT: Send 'read attributes' command
-I (22997) ESP_ZB_THERMOSTAT: Configure report response: status(0), cluster(0x402), direction(0xe8), attribute(0xffff)
-I (22997) ESP_ZB_THERMOSTAT: Received report from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (23007) ESP_ZB_THERMOSTAT: Measured Value is 25.00 degrees Celsius
-I (23027) ESP_ZB_THERMOSTAT: Read attribute response: from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (23027) ESP_ZB_THERMOSTAT: Read attribute response: status(0), cluster(0x402), attribute(0x0), type(0x29), value(196)
-I (23037) ESP_ZB_THERMOSTAT: Measured Value is 25.00 degrees Celsius
-I (23047) ESP_ZB_THERMOSTAT: Read attribute response: status(0), cluster(0x402), attribute(0x1), type(0x29), value(24)
-I (23057) ESP_ZB_THERMOSTAT: Min Measured Value is -10.00 degrees Celsius
-I (23067) ESP_ZB_THERMOSTAT: Read attribute response: status(0), cluster(0x402), attribute(0x2), type(0x29), value(64)
-I (23077) ESP_ZB_THERMOSTAT: Max Measured Value is 80.00 degrees Celsius
-I (23087) ESP_ZB_THERMOSTAT: Read attribute response: status(134), cluster(0x402), attribute(0x3), type(0xc7), value(169)
-I (33077) ESP_ZB_THERMOSTAT: Received report from address(0xe6d0) src endpoint(10) to dst endpoint(1) cluster(0x402)
-I (33077) ESP_ZB_THERMOSTAT: Measured Value is 25.00 degrees Celsius
+*(Note: Use `python gui_monitor.py --help` for possible arguments based on the implementation, but port bindings map manually in most systems)*
+
+### 2. CLI Monitor (`monitor.py`)
+Provides structured, command-line analytics without the overhead of a graphical interface. Use this tool for headless monitoring, debugging, or logging raw cluster payload updates textually.
+
+**Usage:**
+```bash
+python monitor.py --port COMx --baud 115200
 ```
 
-## Troubleshooting
+## Diagnostics and Troubleshooting
 
-For any technical queries, please open an [issue](https://github.com/espressif/esp-zigbee-sdk/issues) on GitHub. We will get back to you soon.
+- **No Data in UI/Monitor**: Verify that the remote sensor nodes are properly commissioned. Look for `ZDO signal: NWK Device Associated (0x12)` via standard `idf.py monitor` logs to guarantee pairing.
+- **Type Mismatch Warnings**: The C logic acts defensively. If an End Device sends an expected attribute but with an unexpected Zigbee data type (e.g., `S16` instead of `S32`), the Coordinator securely traps the error and throws a `type mismatch` warning instead of arbitrarily casting memory pointers. Verify the attribute definitions on the End Device source code.
+- **Network Formation Fails**: Confirm ZBOSS library compatibility, perform `idf.py fullclean`, and erase NVRAM. Ensure the development board antenna is correctly connected.

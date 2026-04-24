@@ -12,10 +12,11 @@
  * CONDITIONS OF ANY KIND, either express or implied.
  */
 
-#include "esp_zb_thermostat.h"
+#include "zigbee_task.h"
 //#include "switch_driver.h"
 
 #include "string.h"
+#include "inttypes.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "esp_check.h"
@@ -24,6 +25,20 @@
 #include "ha/esp_zigbee_ha_standard.h"
 
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
+
+#define CUSTOM_CLUSTER_ID 0xFF01
+
+/* Custom Cluster Attributes */
+#define ATTR_GNSS_SATS        0x0001
+#define ATTR_LATITUDE         0x0002
+#define ATTR_LONGITUDE        0x0003
+#define ATTR_CURRENT_UA       0x0004
+#define ATTR_ACCEL_X          0x0005
+#define ATTR_ACCEL_Y          0x0006
+#define ATTR_ACCEL_Z          0x0007
+#define ATTR_SET_PROTOCOL     0x0008
+#define ATTR_SLEEP_INTERVAL   0x0009
+#define ATTR_BATTERY_VOLTAGE  0x000A
 
 #if defined ZB_ED_ROLE
 #error Define ZB_COORDINATOR_ROLE in idf.py menuconfig to compile thermostat source code.
@@ -53,6 +68,105 @@ static temp_sensor_device_params_t temp_sensor;
 // };
 
 static const char *TAG = "ESP_ZB_THERMOSTAT";
+
+static const char *custom_attr_name(uint16_t attr_id)
+{
+    switch (attr_id) {
+    case ATTR_GNSS_SATS:
+        return "GNSS_SATS";
+    case ATTR_LATITUDE:
+        return "LATITUDE";
+    case ATTR_LONGITUDE:
+        return "LONGITUDE";
+    case ATTR_CURRENT_UA:
+        return "CURRENT_UA";
+    case ATTR_ACCEL_X:
+        return "ACCEL_X";
+    case ATTR_ACCEL_Y:
+        return "ACCEL_Y";
+    case ATTR_ACCEL_Z:
+        return "ACCEL_Z";
+    case ATTR_SET_PROTOCOL:
+        return "SET_PROTOCOL";
+    case ATTR_SLEEP_INTERVAL:
+        return "SLEEP_INTERVAL";
+    case ATTR_BATTERY_VOLTAGE:
+        return "BATTERY_VOLTAGE";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute, uint16_t src_address)
+{
+    const char *attr_name = custom_attr_name(attribute->id);
+
+    if (!attribute->data.value) {
+        ESP_LOGW(TAG, "Custom attr %s (0x%04x) has NULL value pointer", attr_name, attribute->id);
+        return;
+    }
+
+    switch (attribute->id) {
+    case ATTR_GNSS_SATS:
+        if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U8) {
+            uint8_t value = *(uint8_t *)attribute->data.value;
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
+        } else {
+            ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U8, got 0x%x",
+                     attr_name, attribute->id, attribute->data.type);
+        }
+        break;
+
+    case ATTR_LATITUDE:
+    case ATTR_LONGITUDE:
+        if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S32) {
+            int32_t value = *(int32_t *)attribute->data.value;
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, S32): %" PRId32 ", from 0x%04x",
+                     attr_name, attribute->id, value, src_address);
+        } else {
+            ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected S32, got 0x%x",
+                     attr_name, attribute->id, attribute->data.type);
+        }
+        break;
+
+    case ATTR_CURRENT_UA:
+        if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
+            uint16_t value = *(uint16_t *)attribute->data.value;
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u uA, from 0x%04x", attr_name, attribute->id, value, src_address);
+        } else {
+            ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U16, got 0x%x",
+                     attr_name, attribute->id, attribute->data.type);
+        }
+        break;
+
+    case ATTR_ACCEL_X:
+    case ATTR_ACCEL_Y:
+    case ATTR_ACCEL_Z:
+        if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
+            int16_t value = *(int16_t *)attribute->data.value;
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, S16): %d, from 0x%04x", attr_name, attribute->id, value, src_address);
+        } else {
+            ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected S16, got 0x%x",
+                     attr_name, attribute->id, attribute->data.type);
+        }
+        break;
+
+    case ATTR_BATTERY_VOLTAGE:
+        if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U8) {
+            uint8_t value = *(uint8_t *)attribute->data.value;
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
+        } else {
+            ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U8, got 0x%x",
+                     attr_name, attribute->id, attribute->data.type);
+        }
+        break;
+
+    default:
+        ESP_LOGI(TAG, "Custom attr %s (0x%04x, type 0x%x): value parser not implemented",
+                 attr_name, attribute->id, attribute->data.type);
+        break;
+    }
+}
 
 // static void esp_app_buttons_handler(switch_func_pair_t *button_func_pair)
 // {
@@ -252,7 +366,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                 ESP_LOGI(TAG, "Start network formation");
                 esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_FORMATION);
             } else {
-                esp_zb_bdb_open_network(180);
+                esp_zb_bdb_open_network(0xFF);
                 ESP_LOGI(TAG, "Device rebooted");
             }
         } else {
@@ -305,7 +419,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     }
 }
 
-static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_attribute_t* attribute)
+static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_attribute_t* attribute, uint16_t src_address)
 {
     /* Basic cluster attributes */
     if (cluster_id == ESP_ZB_ZCL_CLUSTER_ID_BASIC) {
@@ -336,17 +450,17 @@ static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_a
         if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID &&
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
             int16_t value = attribute->data.value ? *(int16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Measured Value is %.2f degrees Celsius", zb_s16_to_temperature(value));
+            //ESP_LOGI(TAG, "Measured Value is %.2f V", value / 1000.0);
         }
         if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MIN_VALUE_ID &&
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
             int16_t min_value = attribute->data.value ? *(int16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Min Measured Value is %.2f degrees Celsius", zb_s16_to_temperature(min_value));
+            ESP_LOGI(TAG, "Min Measured Value is %.2f degrees Celsius", min_value / 100.0);
         }
         if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MAX_VALUE_ID &&
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
             int16_t max_value = attribute->data.value ? *(int16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Max Measured Value is %.2f degrees Celsius", zb_s16_to_temperature(max_value));
+            ESP_LOGI(TAG, "Max Measured Value is %.2f degrees Celsius", max_value / 100.0);
         }
         if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_TOLERANCE_ID &&
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
@@ -356,19 +470,8 @@ static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_a
     }
 
     /* Custom cluster attributes reporting */
-    if (cluster_id == 0xFF01) {
-        if (attribute->id == 0x000A) { /* battery_voltage */
-            uint8_t value = attribute->data.value ? *(uint8_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Custom Cluster 0xFF01: battery_voltage reported as %d", value);
-        }
-        if (attribute->id == 0x0004) { /* current_ua */
-            uint16_t value = attribute->data.value ? *(uint16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Custom Cluster 0xFF01: current_ua reported as %d", value);
-        }
-        if (attribute->id == 0x0001) { /* gnss_sats */
-            uint8_t value = attribute->data.value ? *(uint8_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Custom Cluster 0xFF01: gnss_sats reported as %d", value);
-        }
+    if (cluster_id == CUSTOM_CLUSTER_ID) {
+        log_custom_cluster_attribute(attribute, src_address);
     }
 }
 
@@ -377,10 +480,18 @@ static esp_err_t zb_attribute_reporting_handler(const esp_zb_zcl_report_attr_mes
     ESP_RETURN_ON_FALSE(message, ESP_FAIL, TAG, "Empty message");
     ESP_RETURN_ON_FALSE(message->status == ESP_ZB_ZCL_STATUS_SUCCESS, ESP_ERR_INVALID_ARG, TAG, "Received message: error status(%d)",
                         message->status);
-    ESP_LOGI(TAG, "Received report from address(0x%x) src endpoint(%d) to dst endpoint(%d) cluster(0x%x)",
-             message->src_address.u.short_addr, message->src_endpoint,
-             message->dst_endpoint, message->cluster);
-    esp_app_zb_attribute_handler(message->cluster, &message->attribute);
+    // ESP_LOGI(TAG, "Report src(0x%04x ep:%d) -> dst(ep:%d), cluster(0x%04x), attr(0x%04x), type(0x%x)",
+    //          message->src_address.u.short_addr, message->src_endpoint,
+    //          message->dst_endpoint, message->cluster, message->attribute.id,
+    //          message->attribute.data.type);
+    // if (message->cluster == ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT){
+    //     esp_zb_ieee_addr_t ieee_addr;
+    //     esp_zb_ieee_address_by_short(message->src_address.u.short_addr, ieee_addr);
+    //     ESP_LOGI(TAG, "Message from "ZB_MACSTR"", ZB_MAC2STR(ieee_addr));
+    // }
+
+    /* Uncomment this when we want to work with the handler again*/
+    esp_app_zb_attribute_handler(message->cluster, &message->attribute, message->src_address.u.short_addr);
     return ESP_OK;
 }
 
@@ -396,12 +507,11 @@ static esp_err_t zb_read_attr_resp_handler(const esp_zb_zcl_cmd_read_attr_resp_m
 
     esp_zb_zcl_read_attr_resp_variable_t *variable = message->variables;
     while (variable) {
-        ESP_LOGI(TAG, "Read attribute response: status(%d), cluster(0x%x), attribute(0x%x), type(0x%x), value(%d)",
-                    variable->status, message->info.cluster,
-                    variable->attribute.id, variable->attribute.data.type,
-                    variable->attribute.data.value ? *(uint8_t *)variable->attribute.data.value : 0);
+        ESP_LOGI(TAG, "Read attribute response: status(%d), cluster(0x%x), attribute(0x%x), type(0x%x)",
+             variable->status, message->info.cluster,
+             variable->attribute.id, variable->attribute.data.type);
         if (variable->status == ESP_ZB_ZCL_STATUS_SUCCESS) {
-            esp_app_zb_attribute_handler(message->info.cluster, &variable->attribute);
+            esp_app_zb_attribute_handler(message->info.cluster, &variable->attribute, message->info.src_address.u.short_addr);
         }
 
         variable = variable->next;
@@ -474,8 +584,14 @@ static esp_zb_ep_list_t *custom_thermostat_ep_create(uint8_t endpoint_id, esp_zb
     return ep_list;
 }
 
-static void esp_zb_task(void *pvParameters)
+void esp_zb_task(void *pvParameters)
 {
+    esp_zb_platform_config_t config = {
+        .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
+        .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
+    };
+    ESP_ERROR_CHECK(esp_zb_platform_config(&config));
+
     /* Initialize Zigbee stack */
     esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ZC_CONFIG();
     esp_zb_init(&zb_nwk_cfg);
@@ -491,15 +607,4 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_set_primary_network_channel_set(ESP_ZB_PRIMARY_CHANNEL_MASK);
     ESP_ERROR_CHECK(esp_zb_start(false));
     esp_zb_stack_main_loop();
-}
-
-void app_main(void)
-{
-    esp_zb_platform_config_t config = {
-        .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
-        .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
-    };
-    ESP_ERROR_CHECK(nvs_flash_init());
-    ESP_ERROR_CHECK(esp_zb_platform_config(&config));
-    xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 }

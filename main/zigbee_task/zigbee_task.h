@@ -11,7 +11,13 @@
  * software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
  * CONDITIONS OF ANY KIND, either express or implied.
  */
+#pragma once
+
 #include "esp_zigbee_core.h"
+
+void start_zigbee_task(void);
+void esp_zb_task(void *pvParameters);
+
 
 /* Zigbee configuration */
 #define MAX_CHILDREN                    10          /* the max amount of connected devices */
@@ -24,6 +30,9 @@
  */
 #define MANUFACTURER_NAME               "\x09""ESPRESSIF"
 #define MODEL_IDENTIFIER                "\x07"CONFIG_IDF_TARGET
+
+#define ZB_MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5], (a)[6], (a)[7]
+#define ZB_MACSTR "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x"
 
 #define ESP_ZB_ZC_CONFIG()                                                              \
     {                                                                                   \
