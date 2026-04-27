@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
+#include "zigbee_task.h"
 
 static const char *TAG = "USB_SERIAL";
 
@@ -65,6 +66,12 @@ void usb_serial_jtag_task(void *arg)
                         if (byte == SERIAL_SYNC_2) {
                             // Valid packet received ending with SYNC_BYTE_2
                             ESP_LOGI(TAG, "Packet received (Len: %d). Echoing back...", packet_idx);
+                            
+                            // Check for hardcoded command
+                            if (packet_idx >= 3 && packet_buf[1] == 0x01) {
+                                ESP_LOGI(TAG, "Executing zigbee test config command");
+                                zigbee_send_test_config();
+                            }
                             
                             // Echo the packet back
                             usb_serial_jtag_write_bytes(packet_buf, packet_idx, portMAX_DELAY);

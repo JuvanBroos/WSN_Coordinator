@@ -31,6 +31,16 @@ class ZigbeeMonitorApp(ctk.CTk):
         self.header_label = ctk.CTkLabel(self.header_frame, text=f"Listening on {port} @ {baudrate} bps", font=ctk.CTkFont(size=20, weight="bold"))
         self.header_label.pack(side="left")
 
+        # Add right-aligned test button to header
+        self.test_button = ctk.CTkButton(
+            self.header_frame, 
+            text="Send Test Config",
+            command=self.send_test_zcl_command,
+            fg_color="#e74c3c",
+            hover_color="#c0392b"
+        )
+        self.test_button.pack(side="right", padx=10)
+
         # Scrollable Frame for the Data Table
         self.table_frame = ctk.CTkScrollableFrame(self)
         self.table_frame.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nsew")
@@ -123,6 +133,18 @@ class ZigbeeMonitorApp(ctk.CTk):
             
             # After 1 second, revert the color back to standard text color
             self.after(1000, lambda l=lbl: l.configure(text_color=("black", "white")))
+
+    def send_test_zcl_command(self):
+        if self.serial_conn and self.serial_conn.is_open:
+            try:
+                # 0xAA = Sync1, 0x01 = Command ID, 0x55 = Sync2
+                payload = bytearray([0xAA, 0x01, 0x55])
+                self.serial_conn.write(payload)
+                print("Sent hardcoded test configuration command (0xAA 0x01 0x55)")
+            except Exception as e:
+                print(f"Failed to send command: {e}")
+        else:
+            print("Error: Serial connection is not open.")
 
     def on_closing(self):
         self.stop_event.set()
