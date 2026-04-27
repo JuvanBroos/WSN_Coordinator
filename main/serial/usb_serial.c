@@ -68,9 +68,14 @@ void usb_serial_jtag_task(void *arg)
                             ESP_LOGI(TAG, "Packet received (Len: %d). Echoing back...", packet_idx);
                             
                             // Check for hardcoded command
-                            if (packet_idx >= 3 && packet_buf[1] == 0x01) {
-                                ESP_LOGI(TAG, "Executing zigbee test config command");
-                                zigbee_send_test_config();
+                            if (packet_idx >= 3) {
+                                if (packet_buf[1] == 0x01) {
+                                    ESP_LOGI(TAG, "Executing zigbee test config command");
+                                    zigbee_send_test_config();
+                                } else if (packet_buf[1] == 0x02) {
+                                    ESP_LOGI(TAG, "Executing zigbee read attributes command");
+                                    zigbee_read_attributes();
+                                }
                             }
                             
                             // Echo the packet back

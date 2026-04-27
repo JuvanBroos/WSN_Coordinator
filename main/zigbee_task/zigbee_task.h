@@ -18,6 +18,7 @@
 void start_zigbee_task(void);
 void esp_zb_task(void *pvParameters);
 void zigbee_send_test_config(void);
+void zigbee_read_attributes(void);
 
 
 /* Zigbee configuration */

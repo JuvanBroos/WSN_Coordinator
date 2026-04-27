@@ -168,37 +168,51 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     }
 }
 
-void zigbee_send_test_config(void)
-{
+void zigbee_read_attributes(void){
     /* Send "read attributes" command to the bound sensor */
     esp_zb_zcl_read_attr_cmd_t read_req = {0};
-    read_req.address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT;
+    read_req.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
     read_req.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
-    read_req.clusterID = ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT;
+    read_req.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
+    read_req.zcl_basic_cmd.dst_addr_u.addr_short = temp_sensor.short_addr;
+    read_req.clusterID = CUSTOM_CLUSTER_ID;
 
     uint16_t attributes[] = {
-        ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID,
-        ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MIN_VALUE_ID,
-        ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MAX_VALUE_ID,
-        ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_TOLERANCE_ID
+        ATTR_GNSS_SATS,
+        ATTR_LATITUDE,
+        ATTR_LONGITUDE,
+        ATTR_CURRENT_UA,
+        ATTR_ACCEL_X,
+        ATTR_ACCEL_Y,
+        ATTR_ACCEL_Z
     };
     read_req.attr_number = ARRAY_LENGTH(attributes);
     read_req.attr_field = attributes;
 
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_zb_zcl_read_attr_cmd_req(&read_req);
+    esp_zb_lock_release();
+    ESP_EARLY_LOGI(TAG, "Send 'read attributes' command");
+}
+
+void zigbee_send_test_config(void)
+{
     /* Send "configure report attribute" command to the bound sensor */
     esp_zb_zcl_config_report_cmd_t report_cmd = {0};
-    report_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT;
+    report_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
     report_cmd.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
-    report_cmd.clusterID = ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT;
+    report_cmd.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
+    report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = temp_sensor.short_addr;
+    report_cmd.clusterID = CUSTOM_CLUSTER_ID;
 
-    int16_t report_change = 200; /* report on each 2 degree changes */
+    int16_t report_change = 100; 
     esp_zb_zcl_config_report_record_t records[] = {
         {
             .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
-            .attributeID = ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID,
+            .attributeID = ATTR_ACCEL_Z,
             .attrType = ESP_ZB_ZCL_ATTR_TYPE_S16,
             .min_interval = 0,
-            .max_interval = 10,
+            .max_interval = 5,
             .reportable_change = &report_change,
         },
     };
@@ -209,11 +223,6 @@ void zigbee_send_test_config(void)
     esp_zb_zcl_config_report_cmd_req(&report_cmd);
     esp_zb_lock_release();
     ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
-
-    esp_zb_lock_acquire(portMAX_DELAY);
-    esp_zb_zcl_read_attr_cmd_req(&read_req);
-    esp_zb_lock_release();
-    ESP_EARLY_LOGI(TAG, "Send 'read attributes' command");
 }
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
@@ -449,7 +458,7 @@ static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_a
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
             int16_t value = attribute->data.value ? *(int16_t *)attribute->data.value : 0;
             //ESP_LOGI(TAG, "Measured Value is %.2f V", value / 1000.0);
-            log_custom_cluster_attribute(attribute, src_address);
+            //log_custom_cluster_attribute(attribute, src_address);
         }
         if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MIN_VALUE_ID &&
             attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {

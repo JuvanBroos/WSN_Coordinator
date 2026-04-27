@@ -41,6 +41,15 @@ class ZigbeeMonitorApp(ctk.CTk):
         )
         self.test_button.pack(side="right", padx=10)
 
+        self.read_attr_button = ctk.CTkButton(
+            self.header_frame, 
+            text="Read Attributes",
+            command=self.send_read_attributes_command,
+            fg_color="#3498db",
+            hover_color="#2980b9"
+        )
+        self.read_attr_button.pack(side="right", padx=10)
+
         # Scrollable Frame for the Data Table
         self.table_frame = ctk.CTkScrollableFrame(self)
         self.table_frame.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nsew")
@@ -143,6 +152,18 @@ class ZigbeeMonitorApp(ctk.CTk):
                 print("Sent hardcoded test configuration command (0xAA 0x01 0x55)")
             except Exception as e:
                 print(f"Failed to send command: {e}")
+        else:
+            print("Error: Serial connection is not open.")
+
+    def send_read_attributes_command(self):
+        if self.serial_conn and self.serial_conn.is_open:
+            try:
+                # 0xAA = Sync1, 0x02 = Command ID, 0x55 = Sync2
+                payload = bytearray([0xAA, 0x02, 0x55])
+                self.serial_conn.write(payload)
+                print("Sent read attributes command (0xAA 0x02 0x55)")
+            except Exception as e:
+                print(f"Failed to send read attributes command: {e}")
         else:
             print("Error: Serial connection is not open.")
 

@@ -19,4 +19,8 @@ void app_main(void)
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 
     xTaskCreate(usb_serial_jtag_task, "USB_Serial_JTAG", 4096, NULL, 5, NULL);
+
+    //zigbee_read_attributes();
+    vTaskDelay(pdMS_TO_TICKS(30000)); // Delay to ensure Zigbee task is up before sending test config
+    //zigbee_send_test_config();
 }
