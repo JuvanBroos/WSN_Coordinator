@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_check.h"
 #include "zigbee_task.h"
+#include "serial/usb_serial.h"
 
 void app_main(void)
 {
@@ -16,4 +17,6 @@ void app_main(void)
     /* Start the Zigbee network */
     ESP_LOGI("APP_MAIN", "Starting Zigbee task...");
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
+
+    xTaskCreate(usb_serial_jtag_task, "USB_Serial_JTAG", 4096, NULL, 5, NULL);
 }
