@@ -6,18 +6,9 @@
 #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
 #include "zigbee_task.h"
+#include "usb_serial.h"
 
 static const char *TAG = "USB_SERIAL";
-
-#define SERIAL_SYNC_1 0xAA
-#define SERIAL_SYNC_2 0x55
-#define MAX_PAYLOAD_LEN 256
-
-// State machine states for packet parsing
-typedef enum {
-    STATE_WAIT_SYNC1,
-    STATE_READ_PAYLOAD,
-} rx_state_t;
 
 void usb_serial_jtag_task(void *arg)
 {
@@ -35,62 +26,51 @@ void usb_serial_jtag_task(void *arg)
         return;
     }
 
-    ESP_LOGI(TAG, "USB Serial JTAG initialized. Waiting for Sync1 (0xAA)...");
+     ESP_LOGI(TAG, "USB Serial JTAG initialized. Waiting for serial_command_t packets...");
 
-    uint8_t rx_buf[64];
-    uint8_t packet_buf[MAX_PAYLOAD_LEN + 2]; // Sync1 + Payload + Sync2 max allocation
-    uint16_t packet_idx = 0;
-    rx_state_t state = STATE_WAIT_SYNC1;
+     /* Ensure the packed command struct has the expected size to avoid
+         receiving unexpected padding from compiler alignment. */
+     _Static_assert(sizeof(serial_command_t) == 8, "serial_command_t must be 8 bytes");
+
+     /* Read whole command structs at once into this variable */
+     serial_command_t cmd = {0};
+     const size_t cmd_size = sizeof(serial_command_t);
 
     // 2. Infinite task loop processing the stream
     while (1) {
-        // Read chunks of data (non-blocking with a short timeout)
-        int bytes_read = usb_serial_jtag_read_bytes(rx_buf, sizeof(rx_buf), pdMS_TO_TICKS(100));
-        
-        if (bytes_read > 0) {
-            for (int i = 0; i < bytes_read; i++) {
-                uint8_t byte = rx_buf[i];
+        int bytes_read = usb_serial_jtag_read_bytes((uint8_t *)&cmd, cmd_size, portMAX_DELAY);
 
-                switch (state) {
-                    case STATE_WAIT_SYNC1:
-                        if (byte == SERIAL_SYNC_1) {
-                            packet_idx = 0;
-                            packet_buf[packet_idx++] = byte;
-                            state = STATE_READ_PAYLOAD;
-                        }
-                        break;
+        if (bytes_read != (int)cmd_size) {
+            ESP_LOGW(TAG, "Partial read: %d bytes (expected %d). Skipping.", bytes_read, (int)cmd_size);
+            continue;
+        }
 
-                    case STATE_READ_PAYLOAD:
-                        packet_buf[packet_idx++] = byte;
-                        
-                        if (byte == SERIAL_SYNC_2) {
-                            // Valid packet received ending with SYNC_BYTE_2
-                            ESP_LOGI(TAG, "Packet received (Len: %d). Echoing back...", packet_idx);
-                            
-                            // Check for hardcoded command
-                            if (packet_idx >= 3) {
-                                if (packet_buf[1] == 0x01) {
-                                    ESP_LOGI(TAG, "Executing zigbee test config command");
-                                    zigbee_send_test_config();
-                                } else if (packet_buf[1] == 0x02) {
-                                    ESP_LOGI(TAG, "Executing zigbee read attributes command");
-                                    zigbee_read_attributes();
-                                }
-                            }
-                            
-                            // Echo the packet back
-                            usb_serial_jtag_write_bytes(packet_buf, packet_idx, portMAX_DELAY);
-                            
-                            // Reset state for next packet
-                            state = STATE_WAIT_SYNC1;
-                        } else if (packet_idx >= sizeof(packet_buf)) {
-                            // Buffer overflow before reaching Sync 2, invalid packet. Reset and ignore.
-                            ESP_LOGW(TAG, "Packet buffer overflow. Discarding.");
-                            state = STATE_WAIT_SYNC1;
-                        }
-                        break;
-                }
-            }
+        /* Validate sync bytes */
+        if (cmd.sync1 != SERIAL_SYNC_1 || cmd.sync2 != SERIAL_SYNC_2) {
+            ESP_LOGW(TAG, "Invalid sync bytes: 0x%02x 0x%02x", cmd.sync1, cmd.sync2);
+            continue;
+        }
+
+        /* Handle the command based on the typed enum in usb_serial.h */
+        switch (cmd.command_type) {
+            case CHANGE_REPORT_CONFIG:
+                ESP_LOGI(TAG, "CHANGE_REPORT_CONFIG received (value: %u). Executing report config.", cmd.command_value.report_config_value);
+                //zigbee_send_test_config();
+                break;
+
+            case READ_ATTRIBUTE:
+                ESP_LOGI(TAG, "READ_ATTRIBUTE received (attr id: 0x%04x). Executing read.", cmd.command_value.read_attribute_id);
+                //zigbee_read_attributes();
+                break;
+
+            case CHANGE_PROTOCOL:
+                ESP_LOGI(TAG, "CHANGE_PROTOCOL received (proto: %u). No handler implemented yet.", cmd.command_value.protocol);
+                /* TODO: implement protocol change handling (e.g. write ATTR_SET_PROTOCOL) */
+                break;
+
+            default:
+                ESP_LOGW(TAG, "Unknown command_type 0x%02x", cmd.command_type);
+                break;
         }
     }
 }

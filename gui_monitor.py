@@ -23,6 +23,7 @@ class ZigbeeMonitorApp(ctk.CTk):
         
         # Configure grid for the main window
         self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
         # Header 
@@ -34,7 +35,7 @@ class ZigbeeMonitorApp(ctk.CTk):
         # Add right-aligned test button to header
         self.test_button = ctk.CTkButton(
             self.header_frame, 
-            text="Send Test Config",
+            text="Test button 1",
             command=self.send_test_zcl_command,
             fg_color="#e74c3c",
             hover_color="#c0392b"
@@ -43,7 +44,7 @@ class ZigbeeMonitorApp(ctk.CTk):
 
         self.read_attr_button = ctk.CTkButton(
             self.header_frame, 
-            text="Read Attributes",
+            text="Test button 2",
             command=self.send_read_attributes_command,
             fg_color="#3498db",
             hover_color="#2980b9"
@@ -52,7 +53,11 @@ class ZigbeeMonitorApp(ctk.CTk):
 
         # Scrollable Frame for the Data Table
         self.table_frame = ctk.CTkScrollableFrame(self)
-        self.table_frame.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nsew")
+        self.table_frame.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="nsew")
+
+        # Textbox for raw ESP_LOGs
+        self.log_textbox = ctk.CTkTextbox(self, state="disabled", wrap="word", font=ctk.CTkFont(family="Consolas", size=12))
+        self.log_textbox.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="nsew")
 
         # Data structure: self.sensors[sensor_addr] = { attr_name: { "value": str, "label_widget": CTkLabel } }
         self.sensors = {}
@@ -93,10 +98,17 @@ class ZigbeeMonitorApp(ctk.CTk):
                 try:
                     line = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
                     if line:
+                        self.after(0, self.append_log, line)
                         self.parse_line(line)
                 except Exception as e:
                     print(f"Serial read error: {e}")
                     time.sleep(1)
+
+    def append_log(self, text):
+        self.log_textbox.configure(state="normal")
+        self.log_textbox.insert("end", text + "\n")
+        self.log_textbox.see("end")
+        self.log_textbox.configure(state="disabled")
 
     def parse_line(self, line):
         match = self.log_pattern.search(line)
@@ -147,9 +159,9 @@ class ZigbeeMonitorApp(ctk.CTk):
         if self.serial_conn and self.serial_conn.is_open:
             try:
                 # 0xAA = Sync1, 0x01 = Command ID, 0x55 = Sync2
-                payload = bytearray([0xAA, 0x01, 0x55])
+                payload = bytearray([0xAA, 0x55, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) # Example payload with dummy data
                 self.serial_conn.write(payload)
-                print("Sent hardcoded test configuration command (0xAA 0x01 0x55)")
+                print("Sent hardcoded test configuration command (0xAA, 0x55, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)")
             except Exception as e:
                 print(f"Failed to send command: {e}")
         else:
@@ -159,9 +171,9 @@ class ZigbeeMonitorApp(ctk.CTk):
         if self.serial_conn and self.serial_conn.is_open:
             try:
                 # 0xAA = Sync1, 0x02 = Command ID, 0x55 = Sync2
-                payload = bytearray([0xAA, 0x02, 0x55])
+                payload = bytearray([0xAA, 0x55, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
                 self.serial_conn.write(payload)
-                print("Sent read attributes command (0xAA 0x02 0x55)")
+                print("Sent read attributes command (0xAA, 0x55, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00)")
             except Exception as e:
                 print(f"Failed to send read attributes command: {e}")
         else:
