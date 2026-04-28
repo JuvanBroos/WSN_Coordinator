@@ -171,9 +171,9 @@ class ZigbeeMonitorApp(ctk.CTk):
         if self.serial_conn and self.serial_conn.is_open:
             try:
                 # 0xAA = Sync1, 0x02 = Command ID, 0x55 = Sync2
-                payload = bytearray([0xAA, 0x55, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
+                payload = bytearray([0xAA, 0x55, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00])
                 self.serial_conn.write(payload)
-                print("Sent read attributes command (0xAA, 0x55, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00)")
+                print("Sent read attributes command (0xAA, 0x55, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00)")
             except Exception as e:
                 print(f"Failed to send read attributes command: {e}")
         else:

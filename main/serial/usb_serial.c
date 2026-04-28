@@ -60,7 +60,7 @@ void usb_serial_jtag_task(void *arg)
 
             case READ_ATTRIBUTE:
                 ESP_LOGI(TAG, "READ_ATTRIBUTE received (attr id: 0x%04x). Executing read.", cmd.command_value.read_attribute_id);
-                //zigbee_read_attributes();
+                zigbee_read_attributes(cmd);
                 break;
 
             case CHANGE_PROTOCOL:

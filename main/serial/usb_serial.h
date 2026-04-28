@@ -1,4 +1,6 @@
-#include "zigbee_task.h"
+#pragma once
+
+#include <stdint.h>
 
 #define SERIAL_SYNC_1 0xAA
 #define SERIAL_SYNC_2 0x55

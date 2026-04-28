@@ -23,6 +23,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ha/esp_zigbee_ha_standard.h"
+#include "usb_serial.h" 
 
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
 
@@ -168,26 +169,39 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     }
 }
 
-void zigbee_read_attributes(void){
+void zigbee_read_attributes(serial_command_t cmd){
     /* Send "read attributes" command to the bound sensor */
     esp_zb_zcl_read_attr_cmd_t read_req = {0};
     read_req.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
     read_req.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
     read_req.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
-    read_req.zcl_basic_cmd.dst_addr_u.addr_short = temp_sensor.short_addr;
+    if (cmd.dest_short_addr == 0){
+        read_req.zcl_basic_cmd.dst_addr_u.addr_short = temp_sensor.short_addr;
+    } else {
+        read_req.zcl_basic_cmd.dst_addr_u.addr_short = cmd.dest_short_addr;
+    }
     read_req.clusterID = CUSTOM_CLUSTER_ID;
 
-    uint16_t attributes[] = {
-        ATTR_GNSS_SATS,
-        ATTR_LATITUDE,
-        ATTR_LONGITUDE,
-        ATTR_CURRENT_UA,
-        ATTR_ACCEL_X,
-        ATTR_ACCEL_Y,
-        ATTR_ACCEL_Z
-    };
-    read_req.attr_number = ARRAY_LENGTH(attributes);
-    read_req.attr_field = attributes;
+    if (cmd.command_value.read_attribute_id == 0){
+        uint16_t attributes[] = {
+            ATTR_GNSS_SATS,
+            ATTR_LATITUDE,
+            ATTR_LONGITUDE,
+            ATTR_CURRENT_UA,
+            ATTR_ACCEL_X,
+            ATTR_ACCEL_Y,
+            ATTR_ACCEL_Z
+        };
+        read_req.attr_number = ARRAY_LENGTH(attributes);
+        read_req.attr_field = attributes;
+    }else{
+        uint16_t attributes[] = {
+            cmd.command_value.read_attribute_id
+        };
+        read_req.attr_number = ARRAY_LENGTH(attributes);
+        read_req.attr_field = attributes;
+    }
+    
 
     esp_zb_lock_acquire(portMAX_DELAY);
     esp_zb_zcl_read_attr_cmd_req(&read_req);
