@@ -55,11 +55,12 @@ void usb_serial_jtag_task(void *arg)
         switch (cmd.command_type) {
             case CHANGE_REPORT_CONFIG:
                 ESP_LOGI(TAG, "CHANGE_REPORT_CONFIG received (value: %u). Executing report config.", cmd.command_value.report_config_value);
-                //zigbee_send_test_config();
+                //zigbee_send_test_config(cmd);
+                zigbee_send_debug_config(cmd);
                 break;
 
             case READ_ATTRIBUTE:
-                ESP_LOGI(TAG, "READ_ATTRIBUTE received (attr id: 0x%04x). Executing read.", cmd.command_value.read_attribute_id);
+                ESP_LOGI(TAG, "READ_ATTRIBUTE 0x%04x received to 0x%04x", cmd.command_value.read_attribute_id, cmd.dest_short_addr);
                 zigbee_read_attributes(cmd);
                 break;
 

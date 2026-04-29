@@ -22,8 +22,8 @@ class ZigbeeMonitorApp(ctk.CTk):
         self.geometry("1100x400")
         
         # Configure grid for the main window
-        self.grid_rowconfigure(1, weight=1)
         self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(3, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
         # Header 
@@ -31,6 +31,27 @@ class ZigbeeMonitorApp(ctk.CTk):
         self.header_frame.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
         self.header_label = ctk.CTkLabel(self.header_frame, text=f"Listening on {port} @ {baudrate} bps", font=ctk.CTkFont(size=20, weight="bold"))
         self.header_label.pack(side="left")
+
+        # Custom Payload Frame
+        self.custom_payload_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.custom_payload_frame.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
+
+        # Entry for custom payload bytes
+        self.custom_payload_entry = ctk.CTkEntry(
+            self.custom_payload_frame,
+            placeholder_text="Enter hex bytes separated by spaces (e.g. AA 55 12 34 00 00)",
+            width=300
+        )
+        self.custom_payload_entry.pack(side="left", padx=(0, 10))
+
+        self.send_payload_button = ctk.CTkButton(
+            self.custom_payload_frame,
+            text="Send Custom Hex Array",
+            command=self.send_custom_payload,
+            fg_color="#f39c12",
+            hover_color="#d68910"
+        )
+        self.send_payload_button.pack(side="left")
 
         # Add right-aligned test button to header
         self.test_button = ctk.CTkButton(
@@ -51,13 +72,21 @@ class ZigbeeMonitorApp(ctk.CTk):
         )
         self.read_attr_button.pack(side="right", padx=10)
 
+        # Entry for attribute ID
+        self.attr_id_entry = ctk.CTkEntry(
+            self.header_frame,
+            placeholder_text="Attr ID (e.g. 0x0006)",
+            width=140
+        )
+        self.attr_id_entry.pack(side="right", padx=10)
+
         # Scrollable Frame for the Data Table
         self.table_frame = ctk.CTkScrollableFrame(self)
-        self.table_frame.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="nsew")
+        self.table_frame.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="nsew")
 
         # Textbox for raw ESP_LOGs
         self.log_textbox = ctk.CTkTextbox(self, state="disabled", wrap="word", font=ctk.CTkFont(family="Consolas", size=12))
-        self.log_textbox.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="nsew")
+        self.log_textbox.grid(row=3, column=0, padx=20, pady=(0, 20), sticky="nsew")
 
         # Data structure: self.sensors[sensor_addr] = { attr_name: { "value": str, "label_widget": CTkLabel } }
         self.sensors = {}
@@ -157,11 +186,32 @@ class ZigbeeMonitorApp(ctk.CTk):
 
     def send_test_zcl_command(self):
         if self.serial_conn and self.serial_conn.is_open:
+            if not self.sensors:
+                print("No sensors detected yet. Cannot send command.")
+                return
+            
+            attr_id_str = self.attr_id_entry.get().strip()
+            if not attr_id_str:
+                print("Please enter an attribute ID (e.g., 0x0007).")
+                return
+                
             try:
-                # 0xAA = Sync1, 0x01 = Command ID, 0x55 = Sync2
-                payload = bytearray([0xAA, 0x55, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) # Example payload with dummy data
-                self.serial_conn.write(payload)
-                print("Sent hardcoded test configuration command (0xAA, 0x55, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)")
+                attr_id = int(attr_id_str, 0)
+                attr_low = attr_id & 0xFF
+                attr_high = (attr_id >> 8) & 0xFF
+            except ValueError:
+                print("Invalid attribute ID format. Use hex (e.g., 0x0006) or integer.")
+                return
+
+            try:
+                for src_addr_str in self.sensors.keys():
+                    addr = int(src_addr_str, 16)
+                    addr_low = addr & 0xFF
+                    addr_high = (addr >> 8) & 0xFF
+                    # 0xAA = Sync1, 0x55 = Sync2, dest_short_addr(low, high), 0x00 = CHANGE_REPORT_CONFIG, attr_low, attr_high, 0x00
+                    payload = bytearray([0xAA, 0x55, addr_low, addr_high, 0x00, 0x00, attr_low, attr_high])
+                    self.serial_conn.write(payload)
+                    print(f"Sent hardcoded test configuration command (Attr ID: {attr_id_str}) to {src_addr_str}")
             except Exception as e:
                 print(f"Failed to send command: {e}")
         else:
@@ -169,13 +219,58 @@ class ZigbeeMonitorApp(ctk.CTk):
 
     def send_read_attributes_command(self):
         if self.serial_conn and self.serial_conn.is_open:
+            if not self.sensors:
+                print("No sensors detected yet. Cannot send command.")
+                return
+            
+            attr_id_str = self.attr_id_entry.get().strip()
+            if not attr_id_str:
+                print("Please enter an attribute ID (e.g., 0x0006).")
+                return
+                
             try:
-                # 0xAA = Sync1, 0x02 = Command ID, 0x55 = Sync2
-                payload = bytearray([0xAA, 0x55, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00])
-                self.serial_conn.write(payload)
-                print("Sent read attributes command (0xAA, 0x55, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00)")
+                attr_id = int(attr_id_str, 0)
+                attr_low = attr_id & 0xFF
+                attr_high = (attr_id >> 8) & 0xFF
+            except ValueError:
+                print("Invalid attribute ID format. Use hex (e.g., 0x0006) or integer.")
+                return
+                
+            try:
+                for src_addr_str in self.sensors.keys():
+                    addr = int(src_addr_str, 16)
+                    addr_low = addr & 0xFF
+                    addr_high = (addr >> 8) & 0xFF
+                    # 0xAA = Sync1, 0x55 = Sync2, dest_short_addr(low, high), 0x01 = READ_ATTRIBUTE, attr_low, attr_high, 0x00
+                    payload = bytearray([0xAA, 0x55, addr_low, addr_high, 0x01, 0x00, attr_low, attr_high])
+                    self.serial_conn.write(payload)
+                    print(f"Sent read attributes command (Attr ID: {attr_id_str}) to {src_addr_str}")
             except Exception as e:
                 print(f"Failed to send read attributes command: {e}")
+        else:
+            print("Error: Serial connection is not open.")
+
+    def send_custom_payload(self):
+        if self.serial_conn and self.serial_conn.is_open:
+            payload_str = self.custom_payload_entry.get().strip()
+            if not payload_str:
+                print("Please enter a hex payload (e.g. AA 55 12 34).")
+                return
+            
+            try:
+                # Remove spaces and commas, split into bytes
+                # e.g. "AA 55 12", "AA, 55, 12", "0xAA 0x55"
+                clean_str = payload_str.replace(",", " ").replace("0x", " ")
+                hex_parts = [part.strip() for part in clean_str.split() if part.strip()]
+                
+                # Convert string list to bytearray
+                b_array = bytearray([int(h, 16) for h in hex_parts])
+                self.serial_conn.write(b_array)
+                print(f"Sent custom payload: {' '.join([f'{b:02X}' for b in b_array])}")
+            except ValueError as e:
+                print(f"Invalid payload format. Make sure it's valid hex: {e}")
+            except Exception as e:
+                print(f"Failed to send custom payload: {e}")
         else:
             print("Error: Serial connection is not open.")
 
