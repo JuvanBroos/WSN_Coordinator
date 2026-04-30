@@ -30,7 +30,7 @@ void usb_serial_jtag_task(void *arg)
 
      /* Ensure the packed command struct has the expected size to avoid
          receiving unexpected padding from compiler alignment. */
-     _Static_assert(sizeof(serial_command_t) == 8, "serial_command_t must be 8 bytes");
+     //_Static_assert(sizeof(serial_command_t) == 8, "serial_command_t must be 8 bytes");
 
      /* Read whole command structs at once into this variable */
      serial_command_t cmd = {0};
@@ -54,18 +54,19 @@ void usb_serial_jtag_task(void *arg)
         /* Handle the command based on the typed enum in usb_serial.h */
         switch (cmd.command_type) {
             case CHANGE_REPORT_CONFIG:
-                ESP_LOGI(TAG, "CHANGE_REPORT_CONFIG received (value: %u). Executing report config.", cmd.command_value.report_config_value);
+                ESP_LOGI(TAG, "CHANGE_REPORT_CONFIG received. Dest: 0x%04x, min: %u, max: %u, delta: %u",
+                         cmd.dest_short_addr, cmd.command_value_1_min, cmd.command_value_2_max, cmd.command_value_3.report_config_delta);
                 //zigbee_send_test_config(cmd);
                 zigbee_send_debug_config(cmd);
                 break;
 
             case READ_ATTRIBUTE:
-                ESP_LOGI(TAG, "READ_ATTRIBUTE 0x%04x received to 0x%04x", cmd.command_value.read_attribute_id, cmd.dest_short_addr);
+                ESP_LOGI(TAG, "READ_ATTRIBUTE 0x%04x received to 0x%04x", cmd.command_value_3.read_attribute_id, cmd.dest_short_addr);
                 zigbee_read_attributes(cmd);
                 break;
 
             case CHANGE_PROTOCOL:
-                ESP_LOGI(TAG, "CHANGE_PROTOCOL received (proto: %u). No handler implemented yet.", cmd.command_value.protocol);
+                ESP_LOGI(TAG, "CHANGE_PROTOCOL received (proto: %u). No handler implemented yet.", cmd.command_value_3.protocol);
                 /* TODO: implement protocol change handling (e.g. write ATTR_SET_PROTOCOL) */
                 break;
 

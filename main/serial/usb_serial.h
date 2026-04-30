@@ -32,12 +32,13 @@ typedef struct serial_command_s {
     uint16_t dest_short_addr; // Short address of the target device for this command
     uint8_t command_type;
     uint8_t report_config_option; // Only valid if command_type is CHANGE_REPORT_CONFIG
-    
+    uint16_t command_value_1_min;
+    uint16_t command_value_2_max;
     union {
-        uint16_t report_config_value;
+        uint16_t report_config_delta;
         uint16_t read_attribute_id;
         uint16_t protocol;
-    }command_value;
+    }command_value_3;
 
 } serial_command_t;// Struct of command that is sent by the host over USB Serial JTAG
 

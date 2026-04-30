@@ -182,7 +182,7 @@ void zigbee_read_attributes(serial_command_t cmd){
     }
     read_req.clusterID = CUSTOM_CLUSTER_ID;
 
-    if (cmd.command_value.read_attribute_id == 0){
+    if (cmd.command_value_3.read_attribute_id == 0){
         uint16_t attributes[] = {
             ATTR_GNSS_SATS,
             ATTR_LATITUDE,
@@ -196,7 +196,7 @@ void zigbee_read_attributes(serial_command_t cmd){
         read_req.attr_field = attributes;
     }else{
         uint16_t attributes[] = {
-            cmd.command_value.read_attribute_id
+            cmd.command_value_3.read_attribute_id
         };
         read_req.attr_number = ARRAY_LENGTH(attributes);
         read_req.attr_field = attributes;
@@ -218,22 +218,22 @@ void zigbee_send_debug_config(serial_command_t cmd){
     report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = cmd.dest_short_addr;//temp_sensor.short_addr;
     report_cmd.clusterID = CUSTOM_CLUSTER_ID;
 
-    int16_t report_change = 200; /* report on each 2 degree changes */
+    int16_t report_change = cmd.command_value_3.report_config_delta; /* report on each 2 degree changes */
     esp_zb_zcl_config_report_record_t records[] = {
         {
             .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
             .attributeID = ATTR_ACCEL_Z,
             .attrType = ESP_ZB_ZCL_ATTR_TYPE_S16,
-            .min_interval = 0,
-            .max_interval = cmd.command_value.report_config_value,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
             .reportable_change = &report_change,
         },
         {
             .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
             .attributeID = ATTR_ACCEL_Y,
             .attrType = ESP_ZB_ZCL_ATTR_TYPE_S16,
-            .min_interval = 0,
-            .max_interval = cmd.command_value.report_config_value,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
             .reportable_change = &report_change,
         }
     };
@@ -246,71 +246,71 @@ void zigbee_send_debug_config(serial_command_t cmd){
     ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
 }
 
-void zigbee_send_test_config(serial_command_t cmd)
-{   
-    ESP_LOGI(TAG, "Preparing to send 'configure reporting' command with option %u and value %u",
-             cmd.report_config_option, cmd.command_value.report_config_value);
-    /* Send "configure report attribute" command to the bound sensor */
-    esp_zb_zcl_config_report_cmd_t report_cmd = {0};
-    report_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
-    report_cmd.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
-    report_cmd.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
-    if (cmd.dest_short_addr == 0){
-        report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = temp_sensor.short_addr;
-    } else {
-        report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = cmd.dest_short_addr;
-    }
-    report_cmd.clusterID = CUSTOM_CLUSTER_ID;
+// void zigbee_send_test_config(serial_command_t cmd)
+// {   
+//     ESP_LOGI(TAG, "Preparing to send 'configure reporting' command with option %u and value %u",
+//              cmd.report_config_option, cmd.command_value.report_config_value);
+//     /* Send "configure report attribute" command to the bound sensor */
+//     esp_zb_zcl_config_report_cmd_t report_cmd = {0};
+//     report_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
+//     report_cmd.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
+//     report_cmd.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
+//     if (cmd.dest_short_addr == 0){
+//         report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = temp_sensor.short_addr;
+//     } else {
+//         report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = cmd.dest_short_addr;
+//     }
+//     report_cmd.clusterID = CUSTOM_CLUSTER_ID;
 
-    uint16_t change_value = 0;
-    change_value = cmd.command_value.report_config_value; // Reportable change value from command
-    uint16_t *change_value_ptr = &change_value; // Pointer to the change value for reportable_change field
-    esp_zb_zcl_config_report_record_t records[7] = {0}; // Array to be populated based on report_config_option 
-    switch (cmd.report_config_option)
-    {
-    case MIN_TIME:
-        for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
-            records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
-            records[i].attributeID = i+1; // Just as an example,
-            records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
-            records[i].min_interval = change_value; // Use the command value
-        }
-        report_cmd.record_number = ARRAY_LENGTH(records);
-        report_cmd.record_field = records;
-        break;
-    case MAX_TIME:
-        for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
-            records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
-            records[i].attributeID = i+1; // Just as an example,
-            records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
-            records[i].max_interval = change_value; // Use the command value
-        }
-        report_cmd.record_number = ARRAY_LENGTH(records);
-        report_cmd.record_field = records;
-        break;
-    case REPORTABLE_CHANGE:
-        for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
-            records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
-            records[i].attributeID = i+1; // Just as an example,
-            records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
-            records[i].reportable_change = change_value_ptr; // Use the command value
-        }
-        report_cmd.record_number = ARRAY_LENGTH(records);
-        report_cmd.record_field = records;
-        break;
-    default:
-        break;
-    } 
+//     uint16_t change_value = 0;
+//     change_value = cmd.command_value.report_config_value; // Reportable change value from command
+//     uint16_t *change_value_ptr = &change_value; // Pointer to the change value for reportable_change field
+//     esp_zb_zcl_config_report_record_t records[7] = {0}; // Array to be populated based on report_config_option 
+//     switch (cmd.report_config_option)
+//     {
+//     case MIN_TIME:
+//         for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
+//             records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
+//             records[i].attributeID = i+1; // Just as an example,
+//             records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
+//             records[i].min_interval = change_value; // Use the command value
+//         }
+//         report_cmd.record_number = ARRAY_LENGTH(records);
+//         report_cmd.record_field = records;
+//         break;
+//     case MAX_TIME:
+//         for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
+//             records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
+//             records[i].attributeID = i+1; // Just as an example,
+//             records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
+//             records[i].max_interval = change_value; // Use the command value
+//         }
+//         report_cmd.record_number = ARRAY_LENGTH(records);
+//         report_cmd.record_field = records;
+//         break;
+//     case REPORTABLE_CHANGE:
+//         for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
+//             records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
+//             records[i].attributeID = i+1; // Just as an example,
+//             records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
+//             records[i].reportable_change = change_value_ptr; // Use the command value
+//         }
+//         report_cmd.record_number = ARRAY_LENGTH(records);
+//         report_cmd.record_field = records;
+//         break;
+//     default:
+//         break;
+//     } 
 
-    ESP_LOGI(TAG, "Constructed report_cmd with option %u and change value %d for attributes 1 to 7",
-             cmd.report_config_option, change_value);
-    esp_zb_lock_acquire(portMAX_DELAY);
-    ESP_LOGI(TAG, "Lock acquired");
-    esp_zb_zcl_config_report_cmd_req(&report_cmd);
-    ESP_LOGI(TAG, "Report command request sent");
-    esp_zb_lock_release();
-    ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
-}
+//     ESP_LOGI(TAG, "Constructed report_cmd with option %u and change value %d for attributes 1 to 7",
+//              cmd.report_config_option, change_value);
+//     esp_zb_lock_acquire(portMAX_DELAY);
+//     ESP_LOGI(TAG, "Lock acquired");
+//     esp_zb_zcl_config_report_cmd_req(&report_cmd);
+//     ESP_LOGI(TAG, "Report command request sent");
+//     esp_zb_lock_release();
+//     ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
+// }
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
