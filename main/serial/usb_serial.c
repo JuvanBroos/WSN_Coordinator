@@ -34,7 +34,7 @@ void usb_serial_jtag_task(void *arg)
 
      /* Read whole command structs at once into this variable */
      serial_command_t cmd = {0};
-     const size_t cmd_size = sizeof(serial_command_t);
+     size_t cmd_size = sizeof(serial_command_t);
 
     // 2. Infinite task loop processing the stream
     while (1) {

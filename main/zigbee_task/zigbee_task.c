@@ -40,15 +40,16 @@
 #define ATTR_SET_PROTOCOL     0x0008
 #define ATTR_SLEEP_INTERVAL   0x0009
 #define ATTR_BATTERY_VOLTAGE  0x000A
+#define ATTR_TEMPERATURE      0x000B
 
 #if defined ZB_ED_ROLE
 #error Define ZB_COORDINATOR_ROLE in idf.py menuconfig to compile thermostat source code.
 #endif
 
-static float zb_s16_to_temperature(int16_t value)
-{
-    return 1.0 * value / 100;
-}
+// static float zb_s16_to_temperature(int16_t value)
+// {
+//     return 1.0 * value / 100;
+// }
 
 typedef struct zbstring_s {
     uint8_t len;
@@ -93,6 +94,8 @@ static const char *custom_attr_name(uint16_t attr_id)
         return "SLEEP_INTERVAL";
     case ATTR_BATTERY_VOLTAGE:
         return "BATTERY_VOLTAGE";
+    case ATTR_TEMPERATURE:
+        return "TEMPERATURE";
     default:
         return "UNKNOWN";
     }
@@ -130,37 +133,39 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
         }
         break;
 
+    // case ATTR_CURRENT_UA:
+    //     if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
+    //         uint16_t value = *(uint16_t *)attribute->data.value;
+    //         ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u uA, from 0x%04x", attr_name, attribute->id, value, src_address);
+    //     } else {
+    //         ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U16, got 0x%x",
+    //                  attr_name, attribute->id, attribute->data.type);
+    //     }
+    //     break;
+    case ATTR_TEMPERATURE:
     case ATTR_CURRENT_UA:
+    case ATTR_BATTERY_VOLTAGE:
+    case ATTR_ACCEL_X:
+    case ATTR_ACCEL_Y:
+    case ATTR_ACCEL_Z:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
             uint16_t value = *(uint16_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u uA, from 0x%04x", attr_name, attribute->id, value, src_address);
+            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U16, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
         }
         break;
 
-    case ATTR_ACCEL_X:
-    case ATTR_ACCEL_Y:
-    case ATTR_ACCEL_Z:
-        if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16) {
-            int16_t value = *(int16_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, S16): %d, from 0x%04x", attr_name, attribute->id, value, src_address);
-        } else {
-            ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected S16, got 0x%x",
-                     attr_name, attribute->id, attribute->data.type);
-        }
-        break;
-
-    case ATTR_BATTERY_VOLTAGE:
-        if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U8) {
-            uint8_t value = *(uint8_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
-        } else {
-            ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U8, got 0x%x",
-                     attr_name, attribute->id, attribute->data.type);
-        }
-        break;
+    // case ATTR_BATTERY_VOLTAGE:
+    //     if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
+    //         uint16_t value = *(uint16_t *)attribute->data.value;
+    //         ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
+    //     } else {
+    //         ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U16, got 0x%x",
+    //                  attr_name, attribute->id, attribute->data.type);
+    //     }
+    //     break;
 
     default:
         ESP_LOGI(TAG, "Custom attr %s (0x%04x, type 0x%x): value parser not implemented",
@@ -190,7 +195,9 @@ void zigbee_read_attributes(serial_command_t cmd){
             ATTR_CURRENT_UA,
             ATTR_ACCEL_X,
             ATTR_ACCEL_Y,
-            ATTR_ACCEL_Z
+            ATTR_ACCEL_Z,
+            ATTR_BATTERY_VOLTAGE,
+            ATTR_TEMPERATURE
         };
         read_req.attr_number = ARRAY_LENGTH(attributes);
         read_req.attr_field = attributes;
@@ -223,7 +230,7 @@ void zigbee_send_debug_config(serial_command_t cmd){
         {
             .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
             .attributeID = ATTR_ACCEL_Z,
-            .attrType = ESP_ZB_ZCL_ATTR_TYPE_S16,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_U16,
             .min_interval = cmd.command_value_1_min,
             .max_interval = cmd.command_value_2_max,
             .reportable_change = &report_change,
@@ -231,7 +238,63 @@ void zigbee_send_debug_config(serial_command_t cmd){
         {
             .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
             .attributeID = ATTR_ACCEL_Y,
-            .attrType = ESP_ZB_ZCL_ATTR_TYPE_S16,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_U16,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
+            .reportable_change = &report_change,
+        },
+        {
+            .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
+            .attributeID = ATTR_ACCEL_X,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_U16,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
+            .reportable_change = &report_change,
+        },
+        {
+            .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
+            .attributeID = ATTR_CURRENT_UA,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_U16,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
+            .reportable_change = &report_change,
+        },
+        {
+            .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
+            .attributeID = ATTR_LONGITUDE,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_S32,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
+            .reportable_change = &report_change,
+        },
+        {
+            .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
+            .attributeID = ATTR_LATITUDE,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_S32,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
+            .reportable_change = &report_change,
+        },
+        {
+            .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
+            .attributeID = ATTR_GNSS_SATS,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_U8,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
+            .reportable_change = &report_change,
+        },
+        {
+            .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
+            .attributeID = ATTR_TEMPERATURE,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_U16,
+            .min_interval = cmd.command_value_1_min,
+            .max_interval = cmd.command_value_2_max,
+            .reportable_change = &report_change,
+        },
+        {
+            .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV,
+            .attributeID = ATTR_BATTERY_VOLTAGE,
+            .attrType = ESP_ZB_ZCL_ATTR_TYPE_U16,
             .min_interval = cmd.command_value_1_min,
             .max_interval = cmd.command_value_2_max,
             .reportable_change = &report_change,
@@ -245,72 +308,6 @@ void zigbee_send_debug_config(serial_command_t cmd){
     esp_zb_lock_release();
     ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
 }
-
-// void zigbee_send_test_config(serial_command_t cmd)
-// {   
-//     ESP_LOGI(TAG, "Preparing to send 'configure reporting' command with option %u and value %u",
-//              cmd.report_config_option, cmd.command_value.report_config_value);
-//     /* Send "configure report attribute" command to the bound sensor */
-//     esp_zb_zcl_config_report_cmd_t report_cmd = {0};
-//     report_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
-//     report_cmd.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
-//     report_cmd.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
-//     if (cmd.dest_short_addr == 0){
-//         report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = temp_sensor.short_addr;
-//     } else {
-//         report_cmd.zcl_basic_cmd.dst_addr_u.addr_short = cmd.dest_short_addr;
-//     }
-//     report_cmd.clusterID = CUSTOM_CLUSTER_ID;
-
-//     uint16_t change_value = 0;
-//     change_value = cmd.command_value.report_config_value; // Reportable change value from command
-//     uint16_t *change_value_ptr = &change_value; // Pointer to the change value for reportable_change field
-//     esp_zb_zcl_config_report_record_t records[7] = {0}; // Array to be populated based on report_config_option 
-//     switch (cmd.report_config_option)
-//     {
-//     case MIN_TIME:
-//         for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
-//             records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
-//             records[i].attributeID = i+1; // Just as an example,
-//             records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
-//             records[i].min_interval = change_value; // Use the command value
-//         }
-//         report_cmd.record_number = ARRAY_LENGTH(records);
-//         report_cmd.record_field = records;
-//         break;
-//     case MAX_TIME:
-//         for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
-//             records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
-//             records[i].attributeID = i+1; // Just as an example,
-//             records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
-//             records[i].max_interval = change_value; // Use the command value
-//         }
-//         report_cmd.record_number = ARRAY_LENGTH(records);
-//         report_cmd.record_field = records;
-//         break;
-//     case REPORTABLE_CHANGE:
-//         for (uint16_t i = 0; i < ATTR_ACCEL_Z; i++){
-//             records[i].direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_SRV;
-//             records[i].attributeID = i+1; // Just as an example,
-//             records[i].attrType = ESP_ZB_ZCL_ATTR_TYPE_S16;
-//             records[i].reportable_change = change_value_ptr; // Use the command value
-//         }
-//         report_cmd.record_number = ARRAY_LENGTH(records);
-//         report_cmd.record_field = records;
-//         break;
-//     default:
-//         break;
-//     } 
-
-//     ESP_LOGI(TAG, "Constructed report_cmd with option %u and change value %d for attributes 1 to 7",
-//              cmd.report_config_option, change_value);
-//     esp_zb_lock_acquire(portMAX_DELAY);
-//     ESP_LOGI(TAG, "Lock acquired");
-//     esp_zb_zcl_config_report_cmd_req(&report_cmd);
-//     ESP_LOGI(TAG, "Report command request sent");
-//     esp_zb_lock_release();
-//     ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
-// }
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
@@ -433,8 +430,6 @@ static esp_err_t deferred_driver_init(void)
 {
     static bool is_inited = false;
     if (!is_inited) {
-        // ESP_RETURN_ON_FALSE(switch_driver_init(button_func_pair, PAIR_SIZE(button_func_pair), esp_app_buttons_handler),
-        //                     ESP_FAIL, TAG, "Failed to initialize switch driver");
         is_inited = true;
     }
     return is_inited ? ESP_OK : ESP_FAIL;

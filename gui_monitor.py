@@ -11,7 +11,7 @@ import argparse
 ATTRIBUTES = [
     "GNSS_SATS", "LATITUDE", "LONGITUDE", "CURRENT_UA",
     "ACCEL_X", "ACCEL_Y", "ACCEL_Z", "SET_PROTOCOL", 
-    "SLEEP_INTERVAL", "BATTERY_VOLTAGE"
+    "SLEEP_INTERVAL", "BATTERY_VOLTAGE", "TEMPERATURE"
 ]
 
 class ZigbeeMonitorApp(ctk.CTk):
@@ -96,8 +96,8 @@ class ZigbeeMonitorApp(ctk.CTk):
         
         # Draw table headers
         for col_idx, col_name in enumerate(self.columns):
-            lbl = ctk.CTkLabel(self.table_frame, text=col_name, font=ctk.CTkFont(weight="bold"), width=90, anchor="w")
-            lbl.grid(row=0, column=col_idx, padx=5, pady=5)
+            lbl = ctk.CTkLabel(self.table_frame, text=col_name, font=ctk.CTkFont(weight="bold"), width=80, anchor="w")
+            lbl.grid(row=0, column=col_idx, padx=2, pady=5)
 
         # Regex logic for fetching the data
         # Example: I (12345) ESP_ZB_THERMOSTAT: Custom attr ACCEL_X (0x0005, S16): -100, from 0x1A2B
@@ -157,18 +157,18 @@ class ZigbeeMonitorApp(ctk.CTk):
             
             # Create a label for Sensor ID
             id_lbl = ctk.CTkLabel(self.table_frame, text=src_addr, anchor="w", text_color="#3498db", font=ctk.CTkFont(weight="bold"))
-            id_lbl.grid(row=row_idx, column=self.columns.index("Sensor ID"), padx=5, pady=2)
+            id_lbl.grid(row=row_idx, column=self.columns.index("Sensor ID"), padx=2, pady=2)
             self.sensors[src_addr]["Sensor ID"] = id_lbl
 
             # Create a label for Last Seen
             time_lbl = ctk.CTkLabel(self.table_frame, text="", anchor="w")
-            time_lbl.grid(row=row_idx, column=self.columns.index("Last Seen"), padx=5, pady=2)
+            time_lbl.grid(row=row_idx, column=self.columns.index("Last Seen"), padx=2, pady=2)
             self.sensors[src_addr]["Last Seen"] = time_lbl
 
             # Create empty labels for all attributes
             for attr in ATTRIBUTES:
                 lbl = ctk.CTkLabel(self.table_frame, text="-", anchor="w", text_color="gray")
-                lbl.grid(row=row_idx, column=self.columns.index(attr), padx=5, pady=2)
+                lbl.grid(row=row_idx, column=self.columns.index(attr), padx=2, pady=2)
                 self.sensors[src_addr][attr] = lbl
 
         # Update Last Seen timestamp
