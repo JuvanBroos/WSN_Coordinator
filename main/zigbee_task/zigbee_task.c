@@ -1,19 +1,4 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: CC0-1.0
- *
- * Zigbee HA_thermostat Example
- *
- * This example code is in the Public Domain (or CC0 licensed, at your option.)
- *
- * Unless required by applicable law or agreed to in writing, this
- * software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
- * CONDITIONS OF ANY KIND, either express or implied.
- */
-
 #include "zigbee_task.h"
-//#include "switch_driver.h"
 
 #include "string.h"
 #include "inttypes.h"
@@ -46,11 +31,6 @@
 #error Define ZB_COORDINATOR_ROLE in idf.py menuconfig to compile thermostat source code.
 #endif
 
-// static float zb_s16_to_temperature(int16_t value)
-// {
-//     return 1.0 * value / 100;
-// }
-
 typedef struct zbstring_s {
     uint8_t len;
     char data[];
@@ -64,10 +44,6 @@ typedef struct temp_sensor_device_params_s {
 } temp_sensor_device_params_t;
 
 static temp_sensor_device_params_t temp_sensor;
-
-// static switch_func_pair_t button_func_pair[] = {
-//     {GPIO_INPUT_IO_TOGGLE_SWITCH, SWITCH_ONOFF_TOGGLE_CONTROL}
-// };
 
 static const char *TAG = "ESP_ZB_THERMOSTAT";
 
@@ -133,15 +109,6 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
         }
         break;
 
-    // case ATTR_CURRENT_UA:
-    //     if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
-    //         uint16_t value = *(uint16_t *)attribute->data.value;
-    //         ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u uA, from 0x%04x", attr_name, attribute->id, value, src_address);
-    //     } else {
-    //         ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U16, got 0x%x",
-    //                  attr_name, attribute->id, attribute->data.type);
-    //     }
-    //     break;
     case ATTR_TEMPERATURE:
     case ATTR_CURRENT_UA:
     case ATTR_BATTERY_VOLTAGE:
@@ -156,16 +123,6 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
                      attr_name, attribute->id, attribute->data.type);
         }
         break;
-
-    // case ATTR_BATTERY_VOLTAGE:
-    //     if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
-    //         uint16_t value = *(uint16_t *)attribute->data.value;
-    //         ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
-    //     } else {
-    //         ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U16, got 0x%x",
-    //                  attr_name, attribute->id, attribute->data.type);
-    //     }
-    //     break;
 
     default:
         ESP_LOGI(TAG, "Custom attr %s (0x%04x, type 0x%x): value parser not implemented",
@@ -307,6 +264,30 @@ void zigbee_send_debug_config(serial_command_t cmd){
     esp_zb_zcl_config_report_cmd_req(&report_cmd);
     esp_zb_lock_release();
     ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
+}
+
+void zigbee_change_protocol(serial_command_t cmd){
+    esp_zb_zcl_write_attr_cmd_t write_cmd = {0};
+    write_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
+    write_cmd.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
+    write_cmd.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
+    write_cmd.zcl_basic_cmd.dst_addr_u.addr_short = cmd.dest_short_addr;//temp_sensor.short_addr;
+    write_cmd.clusterID = CUSTOM_CLUSTER_ID;
+    esp_zb_zcl_attribute_t attributes[] = {
+        {
+            .id = ATTR_SET_PROTOCOL,
+            .data.type = ESP_ZB_ZCL_ATTR_TYPE_U8,
+            .data.value = &cmd.command_value_3.protocol
+        },
+    };
+    write_cmd.attr_number = ARRAY_LENGTH(attributes);
+    write_cmd.attr_field = attributes;
+
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_zb_zcl_write_attr_cmd_req(&write_cmd);
+    esp_zb_lock_release();
+    ESP_EARLY_LOGI(TAG, "Send 'write attributes' command to change protocol");
+
 }
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
@@ -626,6 +607,22 @@ static esp_err_t zb_configure_report_resp_handler(const esp_zb_zcl_cmd_config_re
     return ESP_OK;
 }
 
+static esp_err_t zb_write_attr_resp_handler(const esp_zb_zcl_cmd_write_attr_resp_message_t *message)
+{
+    ESP_RETURN_ON_FALSE(message, ESP_FAIL, TAG, "Empty message");
+    ESP_RETURN_ON_FALSE(message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS, ESP_ERR_INVALID_ARG, TAG, "Received message: error status(%d)",
+                        message->info.status);
+
+    esp_zb_zcl_write_attr_resp_variable_t *variable = message->variables;
+    while (variable) {
+        ESP_LOGI(TAG, "Write attribute response: status(%d), cluster(0x%x), attribute(0x%x)",
+                 variable->status, message->info.cluster, variable->attribute_id);
+        variable = variable->next;
+    }
+
+    return ESP_OK;
+}
+
 static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id, const void *message)
 {
     esp_err_t ret = ESP_OK;
@@ -638,6 +635,9 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
         break;
     case ESP_ZB_CORE_CMD_REPORT_CONFIG_RESP_CB_ID:
         ret = zb_configure_report_resp_handler((esp_zb_zcl_cmd_config_report_resp_message_t *)message);
+        break;
+    case ESP_ZB_CORE_CMD_WRITE_ATTR_RESP_CB_ID:
+        ret = zb_write_attr_resp_handler((esp_zb_zcl_cmd_write_attr_resp_message_t *)message);
         break;
     default:
         ESP_LOGW(TAG, "Receive Zigbee action(0x%x) callback", callback_id);

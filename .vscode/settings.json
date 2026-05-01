@@ -5,7 +5,7 @@
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32c6"
   },
-  "idf.portWin": "COM6",
+  "idf.portWin": "COM4",
   "idf.flashType": "JTAG",
   "idf.currentSetup": "C:\\Users\\User\\esp\\v5.4.2\\esp-idf",
   "idf.buildPath": "C:/esp_builds/wsn_coordinator_build",

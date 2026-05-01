@@ -21,8 +21,9 @@ void zigbee_read_attributes(serial_command_t cmd);
 
 void start_zigbee_task(void);
 void esp_zb_task(void *pvParameters);
-void zigbee_send_test_config(serial_command_t cmd);
+//void zigbee_send_test_config(serial_command_t cmd);
 void zigbee_send_debug_config(serial_command_t cmd);
+void zigbee_change_protocol(serial_command_t cmd);
 
 
 /* Zigbee configuration */
