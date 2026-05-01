@@ -13,9 +13,9 @@ typedef enum {
     PLACEHOLDER_1 = 0x04,
 } serial_command_type_t;
 
-#define PROTO_WIFI 0
-#define PROTO_ZIGBEE 1
-#define PROTO_LORA 2
+// #define PROTO_WIFI 0
+// #define PROTO_ZIGBEE 1
+// #define PROTO_LORA 2
 
 typedef struct serial_command_s {
     uint8_t sync1; // Should be SERIAL_SYNC_1

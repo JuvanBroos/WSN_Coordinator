@@ -3,5 +3,6 @@ idf_component_register(
     "app_main.c"
     "zigbee_task/zigbee_task.c"
     "serial/usb_serial.c"
-    INCLUDE_DIRS "." "zigbee_task" "serial"
+    "espnow/espnow.c"
+    INCLUDE_DIRS "." "zigbee_task" "serial" "espnow"
 )

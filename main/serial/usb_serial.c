@@ -66,7 +66,7 @@ void usb_serial_jtag_task(void *arg)
                 break;
 
             case CHANGE_PROTOCOL:
-                ESP_LOGI(TAG, "CHANGE_PROTOCOL received (proto: %u). No handler implemented yet.", cmd.command_value_3.protocol);
+                ESP_LOGI(TAG, "CHANGE_PROTOCOL received (proto: %u)", cmd.command_value_3.protocol);
                 zigbee_change_protocol(cmd);
                 break;
 
