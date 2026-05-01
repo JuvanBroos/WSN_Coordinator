@@ -3,4 +3,3 @@ managed_components/
 dependencies.lock
 sdkconfig.old
 /.github
-__pycache__/
