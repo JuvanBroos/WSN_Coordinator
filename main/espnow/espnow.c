@@ -26,7 +26,6 @@ static QueueHandle_t espnow_queue = NULL;
 static espnow_send_param_t *s_send_param = NULL;
 
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-static uint16_t espnow_seq[ESPNOW_DATA_MAX] = { 0, 0 };
 
 #define IS_BROADCAST_ADDR(addr) (memcmp(addr, broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 
@@ -99,7 +98,7 @@ void espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, i
 }
 
 /* Parse received ESPNOW data. */
-int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t *seq, uint32_t *magic)
+int espnow_data_parse(uint8_t *data, uint16_t data_len)
 {
     espnow_data_t *buf = (espnow_data_t *)data;
     uint16_t crc, crc_cal = 0;
@@ -109,15 +108,12 @@ int espnow_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint16_t
         return -1;
     }
 
-    *state = buf->state;
-    *seq = buf->seq_num;
-    *magic = buf->magic;
     crc = buf->crc;
     buf->crc = 0;
     crc_cal = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, data_len);
 
     if (crc_cal == crc) {
-        return buf->type;
+        return 1;
     }
     return -1;
 }
@@ -127,20 +123,12 @@ void espnow_data_prepare(espnow_send_param_t *send_param)
 {
     espnow_data_t *buf = (espnow_data_t *)send_param->buffer; 
     assert(send_param->len >= sizeof(espnow_data_t));
-    buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? ESPNOW_DATA_BROADCAST : ESPNOW_DATA_UNICAST;
-    buf->state = send_param->state;
-    buf->seq_num = espnow_seq[buf->type]++;
     buf->crc = 0;
-    buf->magic = send_param->magic;
 
     // Fill the payload with real data to be sent
     uplink_payload_t sensor_data = {0};
     memcpy(buf->payload, &sensor_data, sizeof(uplink_payload_t));
-    // if (payload_manager_get_latest(&sensor_data)) {  
-    //     //ESP_LOGI(TAG, "Prepared ESPNOW payload with x-axis: %d mV", ((uplink_payload_t *)buf->payload)->accel_x);
-    // } else {
-    //     ESP_LOGE(pcTaskGetName(NULL), "Failed to receive payload from queue");
-    // }
+    
     buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 
@@ -192,10 +180,6 @@ esp_err_t espnow_init(void)
         return ESP_FAIL;
     }
     memset(send_param, 0, sizeof(espnow_send_param_t));
-    send_param->unicast = false;
-    send_param->broadcast = true;
-    send_param->state = 0;
-    send_param->magic = esp_random();
     send_param->count = CONFIG_ESPNOW_SEND_COUNT;
     send_param->delay = CONFIG_ESPNOW_SEND_DELAY;
     send_param->len = sizeof(uplink_payload_t) + sizeof(espnow_data_t);
@@ -213,7 +197,6 @@ esp_err_t espnow_init(void)
     s_send_param = send_param; // Store globally for deinitialization
 
     xTaskCreate(espnow_task, "espnow_task", 2048, send_param, 4, NULL);
-
     return ESP_OK;
 }
 
@@ -236,10 +219,6 @@ void espnow_deinit(void)
 void espnow_task(void *pvParameter)
 {
     espnow_event_t evt;
-    uint8_t recv_state = 0;
-    uint16_t recv_seq = 0;
-    uint32_t recv_magic = 0;
-    bool is_broadcast = false;
     int ret;
 
     vTaskDelay(5000 / portTICK_PERIOD_MS);
@@ -276,8 +255,9 @@ void espnow_task(void *pvParameter)
             }
             case ESPNOW_RECV_CB:
             {
-                ret = espnow_data_parse(evt.info.recv_cb.data, evt.info.recv_cb.data_len, &recv_state, &recv_seq, &recv_magic);
-                ESP_LOGI(TAG, "Received data sequence %d from "MACSTR" ", recv_seq, MAC2STR(evt.info.recv_cb.mac_addr));
+                //ret = espnow_data_parse(evt.info.recv_cb.data, evt.info.recv_cb.data_len, &recv_state, &recv_seq, &recv_magic);
+                ret = espnow_data_parse(evt.info.recv_cb.data, evt.info.recv_cb.data_len);
+                ESP_LOGI(TAG, "Received data from "MACSTR" ", MAC2STR(evt.info.recv_cb.mac_addr));
 
                 espnow_data_t *recv_buf = (espnow_data_t *)evt.info.recv_cb.data;
                 size_t payload_len = evt.info.recv_cb.data_len - sizeof(espnow_data_t);
