@@ -39,7 +39,15 @@ This project is built using ESP-IDF v5.0+ and relies on the Espressif ZBOSS and 
 
 Upon boot, the Coordinator initializes the Zigbee stack, operates as a Trust Center, and forms an open PAN network. When remote end devices successfully associate and bind to the Coordinator, they begin reporting scheduled telemetry data.
 
-The C code intercepts these responses safely within the `esp_zb_task` thread. Attributes matching the `CUSTOM_CLUSTER_ID` (0xFF01) are explicitly parsed against defined IDs (`ATTR_GNSS_SATS`, `ATTR_LATITUDE`, `ATTR_CURRENT_UA`, etc.). The data payload is unpackaged based on its native Zigbee data type (e.g. `U8`, `U16`, `S16`, `S32`) and logged safely via serial.
+The application logic intercepts these responses safely within the `esp_zb_task` thread. Attributes matching the `CUSTOM_CLUSTER_ID` (0xFF01) are explicitly parsed against defined IDs (`ATTR_GNSS_SATS`, `ATTR_LATITUDE`, `ATTR_CURRENT_UA`, etc.). The data payload is unpackaged based on its native Zigbee data type (e.g. `U8`, `U16`, `S16`, `S32`) and logged safely via serial.
+
+## ESP-NOW Coordinator
+
+In addition to Zigbee, the gateway acts as a **Passive ESP-NOW Coordinator**. This allows it to support high-speed, low-power telemetry from nodes not yet joined to a Zigbee mesh.
+
+- **Discovery Responder**: The gateway listens for discovery broadcasts from new End Nodes and automatically replies with a unicast Discovery ACK to facilitate peer registration.
+- **Passive Monitoring**: It maintains a low-interference profile by listening for unicast telemetry bursts from registered nodes and logging them to the serial console.
+- **Downlink Support**: Capable of sending configuration commands (protocol switches, sleep intervals) directly to ESP-NOW nodes.
 
 ## Python Monitoring Tools
 
