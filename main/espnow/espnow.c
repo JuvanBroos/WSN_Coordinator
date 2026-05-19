@@ -299,8 +299,8 @@ void espnow_task(void *pvParameter)
                     }
                 } else if (payload_len == sizeof(uplink_payload_t)) {
                     uplink_payload_t *payload = (uplink_payload_t *)recv_buf->payload;
-                    ESP_LOGI(TAG, "Payload Data - Temp: %d, Accel X: %d, Y: %d, Z: %d", 
-                                payload->temperature, payload->accel_x, payload->accel_y, payload->accel_z);
+                    ESP_LOGI(TAG, "Payload Data - Temp: %d, Accel X: %d, Y: %d, Z: %d, Curr: %d, Batt: %d", 
+                                payload->temperature, payload->accel_x, payload->accel_y, payload->accel_z, payload->current_ua, payload->batt_level);
                 } else {
                     ESP_LOGW(TAG, "Received ESP-NOW packet of unknown payload length: %d", payload_len);
                 }
