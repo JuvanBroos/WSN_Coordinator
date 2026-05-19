@@ -84,6 +84,7 @@ void espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, i
 
     evt.id = ESPNOW_RECV_CB;
     memcpy(recv_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
+    recv_cb->is_broadcast = IS_BROADCAST_ADDR(des_addr);
     recv_cb->data = malloc(len);
     if (recv_cb->data == NULL) {
         ESP_LOGE(TAG, "Malloc receive data fail");
@@ -244,13 +245,6 @@ void espnow_task(void *pvParameter)
             case ESPNOW_SEND_CB:
             {
                 ESP_LOGI(TAG, "Send callback, status: %d", evt.info.send_cb.status);
-                vTaskDelay(send_param->delay/portTICK_PERIOD_MS);
-
-                espnow_data_prepare(send_param);
-
-                if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-                    ESP_LOGE(TAG, "Send error");
-                }
                 break;
             }
             case ESPNOW_RECV_CB:
@@ -262,6 +256,35 @@ void espnow_task(void *pvParameter)
                 espnow_data_t *recv_buf = (espnow_data_t *)evt.info.recv_cb.data;
                 size_t payload_len = evt.info.recv_cb.data_len - sizeof(espnow_data_t);
                 
+                if (evt.info.recv_cb.is_broadcast) {
+                    ESP_LOGI(TAG, "Replying to broadcast discovery from "MACSTR, MAC2STR(evt.info.recv_cb.mac_addr));
+                    
+                    esp_now_peer_info_t peer;
+                    memset(&peer, 0, sizeof(esp_now_peer_info_t));
+                    peer.channel = CONFIG_ESPNOW_CHANNEL;
+                    peer.ifidx = ESPNOW_WIFI_IF;
+                    peer.encrypt = false;
+                    memcpy(peer.peer_addr, evt.info.recv_cb.mac_addr, ESP_NOW_ETH_ALEN);
+                    
+                    if (!esp_now_is_peer_exist(peer.peer_addr)) {
+                        esp_now_add_peer(&peer);
+                    }
+                    
+                    size_t reply_len = sizeof(espnow_data_t) + sizeof(downlink_payload_t);
+                    uint8_t *reply_buf = malloc(reply_len);
+                    if (reply_buf) {
+                        espnow_data_t *buf = (espnow_data_t *)reply_buf;
+                        buf->crc = 0;
+                        downlink_payload_t *dl_payload = (downlink_payload_t *)buf->payload;
+                        memset(dl_payload, 0, sizeof(downlink_payload_t));
+                        dl_payload->msg_type = MSG_TYPE_DISCOVERY_ACK; 
+                        buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, reply_len);
+                        
+                        esp_now_send(evt.info.recv_cb.mac_addr, reply_buf, reply_len);
+                        free(reply_buf);
+                    }
+                }
+
                 if (payload_len == sizeof(downlink_payload_t)) {
                     downlink_payload_t *dl_payload = (downlink_payload_t *)recv_buf->payload;
                     if (dl_payload->msg_type == MSG_TYPE_CONFIG) {
