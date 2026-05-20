@@ -6,7 +6,9 @@
 #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
 #include "zigbee_task.h"
+#include "espnow.h"
 #include "usb_serial.h"
+#include "protocol.h"
 
 static const char *TAG = "USB_SERIAL";
 
@@ -28,10 +30,6 @@ void usb_serial_jtag_task(void *arg)
 
      ESP_LOGI(TAG, "USB Serial JTAG initialized. Waiting for serial_command_t packets...");
 
-     /* Ensure the packed command struct has the expected size to avoid
-         receiving unexpected padding from compiler alignment. */
-     //_Static_assert(sizeof(serial_command_t) == 8, "serial_command_t must be 8 bytes");
-
      /* Read whole command structs at once into this variable */
      serial_command_t cmd = {0};
      size_t cmd_size = sizeof(serial_command_t);
@@ -51,28 +49,33 @@ void usb_serial_jtag_task(void *arg)
             continue;
         }
 
-        /* Handle the command based on the typed enum in usb_serial.h */
-        switch (cmd.command_type) {
-            case CHANGE_REPORT_CONFIG:
-                ESP_LOGI(TAG, "CHANGE_REPORT_CONFIG received. Dest: 0x%04x, min: %u, max: %u, delta: %u",
-                         cmd.dest_short_addr, cmd.command_value_1_min, cmd.command_value_2_max, cmd.command_value_3.report_config_delta);
-                //zigbee_send_test_config(cmd);
-                zigbee_send_debug_config(cmd);
-                break;
+        /* Handle the command based on protocol */
+        if (cmd.protocol == PROTO_ZIGBEE) {
+            switch (cmd.command_type) {
+                case CHANGE_REPORT_CONFIG:
+                    ESP_LOGI(TAG, "ZIGBEE: CHANGE_REPORT_CONFIG received. Dest: 0x%04x", cmd.dest_short_addr);
+                    zigbee_send_debug_config(cmd);
+                    break;
 
-            case READ_ATTRIBUTE:
-                ESP_LOGI(TAG, "READ_ATTRIBUTE 0x%04x received to 0x%04x", cmd.command_value_3.read_attribute_id, cmd.dest_short_addr);
-                zigbee_read_attributes(cmd);
-                break;
+                case READ_ATTRIBUTE:
+                    ESP_LOGI(TAG, "ZIGBEE: READ_ATTRIBUTE 0x%04x to 0x%04x", cmd.command_value_3.read_attribute_id, cmd.dest_short_addr);
+                    zigbee_read_attributes(cmd);
+                    break;
 
-            case CHANGE_PROTOCOL:
-                ESP_LOGI(TAG, "CHANGE_PROTOCOL received (proto: %u)", cmd.command_value_3.protocol);
-                zigbee_change_protocol(cmd);
-                break;
+                case CHANGE_PROTOCOL:
+                    ESP_LOGI(TAG, "ZIGBEE: CHANGE_PROTOCOL to %u for 0x%04x", cmd.command_value_3.protocol, cmd.dest_short_addr);
+                    zigbee_change_protocol(cmd);
+                    break;
 
-            default:
-                ESP_LOGW(TAG, "Unknown command_type 0x%02x", cmd.command_type);
-                break;
+                default:
+                    ESP_LOGW(TAG, "ZIGBEE: Unknown command_type 0x%02x", cmd.command_type);
+                    break;
+            }
+        } else if (cmd.protocol == PROTO_WIFI) {
+            ESP_LOGI(TAG, "ESPNOW: Command 0x%02x received for 0x%04x", cmd.command_type, cmd.dest_short_addr);
+            espnow_send_command(cmd);
+        } else {
+            ESP_LOGW(TAG, "Unsupported protocol: 0x%02x", cmd.protocol);
         }
     }
 }

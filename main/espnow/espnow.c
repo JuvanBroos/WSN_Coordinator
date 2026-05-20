@@ -27,6 +27,88 @@ static espnow_send_param_t *s_send_param = NULL;
 
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
+typedef struct {
+    uint16_t short_addr;
+    uint8_t mac_addr[ESP_NOW_ETH_ALEN];
+} espnow_addr_map_t;
+
+#define MAX_ESPNOW_NODES 32
+static espnow_addr_map_t addr_map[MAX_ESPNOW_NODES];
+static int addr_map_count = 0;
+
+static void update_addr_map(uint16_t short_addr, const uint8_t *mac_addr) {
+    for (int i = 0; i < addr_map_count; i++) {
+        if (addr_map[i].short_addr == short_addr) {
+            memcpy(addr_map[i].mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
+            return;
+        }
+    }
+    if (addr_map_count < MAX_ESPNOW_NODES) {
+        addr_map[addr_map_count].short_addr = short_addr;
+        memcpy(addr_map[addr_map_count].mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
+        ESP_LOGI(TAG, "Mapped Short Addr 0x%04x to MAC "MACSTR, short_addr, MAC2STR(mac_addr));
+        addr_map_count++;
+    }
+}
+
+static bool get_mac_by_short(uint16_t short_addr, uint8_t *mac_addr) {
+    for (int i = 0; i < addr_map_count; i++) {
+        if (addr_map[i].short_addr == short_addr) {
+            memcpy(mac_addr, addr_map[i].mac_addr, ESP_NOW_ETH_ALEN);
+            return true;
+        }
+    }
+    return false;
+}
+
+void espnow_send_command(serial_command_t cmd) {
+    uint8_t dest_mac[ESP_NOW_ETH_ALEN];
+    if (!get_mac_by_short(cmd.dest_short_addr, dest_mac)) {
+        ESP_LOGE(TAG, "No MAC mapping found for short addr 0x%04x", cmd.dest_short_addr);
+        return;
+    }
+
+    size_t payload_len = sizeof(espnow_data_t) + sizeof(downlink_payload_t);
+    uint8_t *buf = malloc(payload_len);
+    if (!buf) return;
+
+    espnow_data_t *espnow_data = (espnow_data_t *)buf;
+    downlink_payload_t *dl_payload = (downlink_payload_t *)espnow_data->payload;
+
+    dl_payload->target_addr = cmd.dest_short_addr;
+    dl_payload->msg_type = MSG_TYPE_CONFIG;
+    
+    if (cmd.command_type == CHANGE_PROTOCOL) {
+        dl_payload->set_protocol = (uint8_t)cmd.command_value_3.protocol;
+        dl_payload->sleep_interval = 0; // Default or from command
+    } else {
+        // Handle other commands or set defaults
+        dl_payload->set_protocol = 0;
+        dl_payload->sleep_interval = 60; // Example
+    }
+
+    espnow_data->crc = 0;
+    espnow_data->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)espnow_data, payload_len);
+
+    esp_now_peer_info_t peer;
+    memset(&peer, 0, sizeof(esp_now_peer_info_t));
+    peer.channel = CONFIG_ESPNOW_CHANNEL;
+    peer.ifidx = ESPNOW_WIFI_IF;
+    peer.encrypt = false;
+    memcpy(peer.peer_addr, dest_mac, ESP_NOW_ETH_ALEN);
+    if (!esp_now_is_peer_exist(dest_mac)) {
+        esp_now_add_peer(&peer);
+    }
+
+    esp_err_t ret = esp_now_send(dest_mac, buf, payload_len);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send ESP-NOW command: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Sent ESP-NOW command to 0x%04x", cmd.dest_short_addr);
+    }
+    free(buf);
+}
+
 #define IS_BROADCAST_ADDR(addr) (memcmp(addr, broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 
 /* WiFi should start before using ESPNOW */
@@ -299,8 +381,11 @@ void espnow_task(void *pvParameter)
                     }
                 } else if (payload_len == sizeof(uplink_payload_t)) {
                     uplink_payload_t *payload = (uplink_payload_t *)recv_buf->payload;
-                    ESP_LOGI(TAG, "Payload Data - Temp: %d, Accel X: %d, Y: %d, Z: %d, Curr: %d, Batt: %d", 
-                                payload->temperature, payload->accel_x, payload->accel_y, payload->accel_z, payload->current_ua, payload->batt_level);
+                    ESP_LOGI(TAG, "Payload Data - ShortAddr: 0x%04x, Temp: %d, Accel X: %d, Y: %d, Z: %d, Curr: %d, Batt: %d", 
+                                payload->short_addr, payload->temperature, payload->accel_x, payload->accel_y, payload->accel_z, payload->current_ua, payload->batt_level);
+                    
+                    // Update address map
+                    update_addr_map(payload->short_addr, evt.info.recv_cb.mac_addr);
                 } else {
                     ESP_LOGW(TAG, "Received ESP-NOW packet of unknown payload length: %d", payload_len);
                 }

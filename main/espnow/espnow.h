@@ -15,6 +15,7 @@
 #include <string.h>
 #include "esp_err.h"
 #include "esp_now.h"
+#include "usb_serial.h"
 
 /* ESPNOW can work in both station and softap mode. It is configured in menuconfig. */
 #if CONFIG_ESPNOW_WIFI_MODE_STATION
@@ -25,7 +26,7 @@
 #define ESPNOW_WIFI_IF   WIFI_IF_AP
 #endif
 
-#define ESPNOW_QUEUE_SIZE           6
+#define ESPNOW_QUEUE_SIZE           64
 
 typedef enum {
     ESPNOW_SEND_CB,
@@ -78,5 +79,6 @@ int espnow_data_parse(uint8_t *data, uint16_t data_len);
 void espnow_data_prepare(espnow_send_param_t *send_param);
 void espnow_deinit(void);
 void espnow_task(void *pvParameter);
+void espnow_send_command(serial_command_t cmd);
 
 #endif
