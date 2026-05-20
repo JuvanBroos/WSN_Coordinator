@@ -41,46 +41,61 @@ Upon boot, the Coordinator initializes the Zigbee stack, operates as a Trust Cen
 
 The application logic intercepts these responses safely within the `esp_zb_task` thread. Attributes matching the `CUSTOM_CLUSTER_ID` (0xFF01) are explicitly parsed against defined IDs (`ATTR_GNSS_SATS`, `ATTR_LATITUDE`, `ATTR_CURRENT_UA`, etc.). The data payload is unpackaged based on its native Zigbee data type (e.g. `U8`, `U16`, `S16`, `S32`) and logged safely via serial.
 
-## ESP-NOW Coordinator
+## Multi-Protocol Support
 
-In addition to Zigbee, the gateway acts as a **Passive ESP-NOW Coordinator**. This allows it to support high-speed, low-power telemetry from nodes not yet joined to a Zigbee mesh.
+The Gateway acts as a central hub for multiple wireless protocols, standardizing incoming data into a unified binary format for the host PC.
 
-- **Discovery Responder**: The gateway listens for discovery broadcasts from new End Nodes and automatically replies with a unicast Discovery ACK to facilitate peer registration.
-- **Passive Monitoring**: It maintains a low-interference profile by listening for unicast telemetry bursts from registered nodes and logging them to the serial console.
-- **Downlink Support**: Capable of sending configuration commands (protocol switches, sleep intervals) directly to ESP-NOW nodes.
+### 1. Zigbee Coordinator
+The gateway forms a Zigbee network and listens for telemetry updates from remote sensor nodes using a custom Zigbee cluster (**0xFF01**). It maintains a "Shadow Table" of active nodes, aggregating individual attribute updates into complete state reports.
 
-## Python Monitoring Tools
+### 2. ESP-NOW Coordinator
+The gateway also acts as an **Active ESP-NOW Coordinator**:
+- **Discovery Responder**: Automatically replies to node discovery broadcasts with a unicast Discovery ACK.
+- **Address Mapping**: Dynamically maps 16-bit virtual IDs (derived from MAC addresses) to full 48-bit hardware MACs, allowing the host PC to target ESP-NOW nodes using consistent 16-bit addressing.
+- **Active Monitoring**: Receives unicast telemetry bursts and instantly routes them to the reporting system.
 
-Due to continuous data streams across multiple nodes, raw serial feeds can be overwhelming. To evaluate node telemetry effectively, two monitoring tools are included alongside the C project.
+## Unified Serial Reporting System
 
-### Dependencies
-Ensure you have the required Python dependencies installed:
-```bash
-pip install pyserial customtkinter
-```
+To ensure reliable data delivery to the host PC, the gateway utilizes a **Dedicated Reporting Task**. All incoming data (regardless of protocol) is packed into a standardized binary frame before transmission over the USB Serial JTAG interface.
 
-### 1. GUI Monitor (`gui_monitor.py`)
-Provides a rich Graphical User Interface built on `customtkinter`. It dynamically generates tabular structures reflecting active remote nodes based on incoming serial logs, rendering real-time updates for:
-- Sensor IDs and their network timestamps.
-- Columnar visualization of custom attribute metrics continually updated upon serial reception.
+### Binary Frame Format (`serial_report_t`)
+| Offset | Field | Type | Description |
+| :--- | :--- | :--- | :--- |
+| 0 | Sync1 | uint8 | Always `0xAA` |
+| 1 | Sync2 | uint8 | Always `0x55` |
+| 2 | Length | uint8 | Payload length |
+| 3 | Protocol | uint8 | 0=ESP-NOW, 1=Zigbee, 2=LoRa |
+| 4 | Type | uint8 | 1=Sensor Data, 2=Status, 3=Log |
+| 5 | Src Addr | uint16 | 16-bit Source identifier |
+| 7 | RSSI | int8 | Signal strength in dBm |
+| 8 | Timestamp| uint32 | Gateway uptime in ms |
+| 12 | Payload | uint8[64]| Protocol-specific data |
+| 76 | Checksum | uint16 | Simple sum of all preceding bytes |
+
+## Serial Command System
+
+The gateway accepts structured binary commands from the host PC to control remote nodes. Commands are protocol-aware and routed based on the `protocol` field.
+
+### Command Structure (`serial_command_t`)
+Commands follow the `0xAA 0x55` framing and include a protocol selector (`0` for ESP-NOW, `1` for Zigbee) to ensure the gateway uses the correct radio and addressing scheme.
+
+## Python Dashboard (`gui_monitor.py`)
+
+The project includes a high-performance **Multi-Protocol Gateway Dashboard** built with `customtkinter`. It provides a real-time visualization of the entire sensor network.
+
+### Features
+- **Split-Screen Layout**: Top panel shows a live **Sensor Data Table**; bottom panel shows a **Live Log Stream**.
+- **Dynamic Node Discovery**: Automatically adds rows as new nodes (Zigbee or ESP-NOW) check in.
+- **High Fidelity**: Decodes binary `serial_report_t` frames for precise data rendering.
+- **Automatic Highlighting**: Briefly highlights updated cells to draw attention to incoming data.
 
 **Usage:**
-*(Replace `COMx` with your specific serial port)*
 ```bash
-python gui_monitor.py -p COMx -b 115200
-```
-*(Note: Use `python gui_monitor.py --help` for possible arguments based on the implementation, but port bindings map manually in most systems)*
-
-### 2. CLI Monitor (`monitor.py`)
-Provides structured, command-line analytics without the overhead of a graphical interface. Use this tool for headless monitoring, debugging, or logging raw cluster payload updates textually.
-
-**Usage:**
-```bash
-python monitor.py --port COMx --baud 115200
+python gui_monitor.py -p <SERIAL_PORT> -b 115200
 ```
 
-## Diagnostics and Troubleshooting
+## Build, Flash, Monitor
 
-- **No Data in UI/Monitor**: Verify that the remote sensor nodes are properly commissioned. Look for `ZDO signal: NWK Device Associated (0x12)` via standard `idf.py monitor` logs to guarantee pairing.
-- **Type Mismatch Warnings**: The C logic acts defensively. If an End Device sends an expected attribute but with an unexpected Zigbee data type (e.g., `S16` instead of `S32`), the Coordinator securely traps the error and throws a `type mismatch` warning instead of arbitrarily casting memory pointers. Verify the attribute definitions on the End Device source code.
-- **Network Formation Fails**: Confirm ZBOSS library compatibility, perform `idf.py fullclean`, and erase NVRAM. Ensure the development board antenna is correctly connected.
+1. Set target: `idf.py set-target esp32c6`
+2. Erase flash: `idf.py -p PORT erase-flash`
+3. Build and Flash: `idf.py -p PORT build flash monitor`
