@@ -59,6 +59,27 @@ typedef struct __attribute__((packed)) {
 } downlink_payload_t;
 
 
+#define MAX_REPORT_PAYLOAD_LEN 64
+
+typedef enum {
+    REPORT_TYPE_SENSOR_DATA = 0x01,
+    REPORT_TYPE_NODE_STATUS = 0x02,
+    REPORT_TYPE_LOG_MESSAGE = 0x03,
+} serial_report_type_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t sync1;          // 0xAA
+    uint8_t sync2;          // 0x55
+    uint8_t length;         // Total size of the payload following metadata
+    uint8_t protocol;       // From protocol_to_run_t
+    uint8_t report_type;    // From serial_report_type_t
+    uint16_t src_short_addr;
+    int8_t rssi;            // Signal strength
+    uint32_t timestamp;     // Gateway uptime in ms
+    uint8_t payload[MAX_REPORT_PAYLOAD_LEN]; 
+    uint16_t checksum;      // CRC or simple sum
+} serial_report_t;
+
 // --------------------------------------------------------
 // SERIAL UART FRAME HEADER (Gateway <-> Pi only)
 // Total Size: 3 Bytes (Checksum is appended after payload)

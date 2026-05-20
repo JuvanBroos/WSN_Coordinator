@@ -1,278 +1,231 @@
 import customtkinter as ctk
+from tkinter import ttk
 import serial
 import serial.tools.list_ports
-import re
 import threading
 import time
 import sys
 import argparse
+import struct
 
-# Define all possible attributes defined in the C code to create stable columns
-ATTRIBUTES = [
-    "GNSS_SATS", "LATITUDE", "LONGITUDE", "CURRENT_UA",
-    "ACCEL_X", "ACCEL_Y", "ACCEL_Z", "SET_PROTOCOL", 
-    "SLEEP_INTERVAL", "BATTERY_VOLTAGE", "TEMPERATURE"
-]
+# Protocol Enums (must match protocol.h)
+PROTO_WIFI = 0
+PROTO_ZIGBEE = 1
+PROTO_LORA = 2
 
-class ZigbeeMonitorApp(ctk.CTk):
+REPORT_TYPE_SENSOR_DATA = 0x01
+REPORT_TYPE_NODE_STATUS = 0x02
+REPORT_TYPE_LOG_MESSAGE = 0x03
+
+# serial_report_t format: <BBBBBHbI64sH
+# < : Little-endian
+# B : sync1 (uint8)
+# B : sync2 (uint8)
+# B : length (uint8)
+# B : protocol (uint8)
+# B : report_type (uint8)
+# H : src_short_addr (uint16)
+# b : rssi (int8)
+# I : timestamp (uint32)
+# 64s : payload (uint8[64])
+# H : checksum (uint16)
+REPORT_STRUCT_FMT = '<BBBBBHbI64sH'
+REPORT_SIZE = struct.calcsize(REPORT_STRUCT_FMT)
+
+# uplink_payload_t format: <6sHBHHBiiHHHH
+# 6s : ieee_addr (uint8[6])
+# H  : short_addr (uint16)
+# B  : msg_type (uint8)
+# H  : batt_level (uint16)
+# H  : temperature (uint16)
+# B  : gnss_sats (uint8)
+# i  : latitude (int32)
+# i  : longitude (int32)
+# H  : current_ua (uint16)
+# H  : accel_x (uint16)
+# H  : accel_y (uint16)
+# H  : accel_z (uint16)
+UPLINK_PAYLOAD_FMT = '<6sHBHHBiiHHHH'
+UPLINK_PAYLOAD_SIZE = struct.calcsize(UPLINK_PAYLOAD_FMT)
+
+class GatewayMonitorApp(ctk.CTk):
     def __init__(self, port, baudrate):
         super().__init__()
 
-        self.title("Zigbee Gateway Monitor")
-        self.geometry("1100x400")
+        self.title("Multi-Protocol Gateway Dashboard")
+        self.geometry("1200x800")
         
-        # Configure grid for the main window
-        self.grid_rowconfigure(2, weight=1)
-        self.grid_rowconfigure(3, weight=1)
+        # Configure grid
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1) # Top: Table
+        self.grid_rowconfigure(1, weight=1) # Bottom: Logs
 
-        # Header 
-        self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.header_frame.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
-        self.header_label = ctk.CTkLabel(self.header_frame, text=f"Listening on {port} @ {baudrate} bps", font=ctk.CTkFont(size=20, weight="bold"))
-        self.header_label.pack(side="left")
-
-        # Custom Payload Frame
-        self.custom_payload_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.custom_payload_frame.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
-
-        # Entry for custom payload bytes
-        self.custom_payload_entry = ctk.CTkEntry(
-            self.custom_payload_frame,
-            placeholder_text="Enter hex bytes separated by spaces (e.g. AA 55 12 34 00 00)",
-            width=300
-        )
-        self.custom_payload_entry.pack(side="left", padx=(0, 10))
-
-        self.send_payload_button = ctk.CTkButton(
-            self.custom_payload_frame,
-            text="Send Custom Hex Array",
-            command=self.send_custom_payload,
-            fg_color="#f39c12",
-            hover_color="#d68910"
-        )
-        self.send_payload_button.pack(side="left")
-
-        # Add right-aligned test button to header
-        self.test_button = ctk.CTkButton(
-            self.header_frame, 
-            text="Test button 1",
-            command=self.send_test_zcl_command,
-            fg_color="#e74c3c",
-            hover_color="#c0392b"
-        )
-        self.test_button.pack(side="right", padx=10)
-
-        self.read_attr_button = ctk.CTkButton(
-            self.header_frame, 
-            text="Test button 2",
-            command=self.send_read_attributes_command,
-            fg_color="#3498db",
-            hover_color="#2980b9"
-        )
-        self.read_attr_button.pack(side="right", padx=10)
-
-        # Entry for attribute ID
-        self.attr_id_entry = ctk.CTkEntry(
-            self.header_frame,
-            placeholder_text="Attr ID (e.g. 0x0006)",
-            width=140
-        )
-        self.attr_id_entry.pack(side="right", padx=10)
-
-        # Scrollable Frame for the Data Table
-        self.table_frame = ctk.CTkScrollableFrame(self)
-        self.table_frame.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="nsew")
-
-        # Textbox for raw ESP_LOGs
-        self.log_textbox = ctk.CTkTextbox(self, state="disabled", wrap="word", font=ctk.CTkFont(family="Consolas", size=12))
-        self.log_textbox.grid(row=3, column=0, padx=20, pady=(0, 20), sticky="nsew")
-
-        # Data structure: self.sensors[sensor_addr] = { attr_name: { "value": str, "label_widget": CTkLabel } }
-        self.sensors = {}
+        # --- Top Panel: Sensor Table ---
+        self.table_frame = ctk.CTkFrame(self)
+        self.table_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
         
-        # Columns tracked dynamically, starting with Sensor ID and Last Seen
-        self.columns = ["Sensor ID", "Last Seen"] + ATTRIBUTES
+        self.table_label = ctk.CTkLabel(self.table_frame, text="Active Sensor Nodes", font=ctk.CTkFont(size=16, weight="bold"))
+        self.table_label.pack(pady=5)
+
+        # Treeview for Table
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", borderwidth=0)
+        style.map("Treeview", background=[('selected', '#347083')])
+
+        self.tree = ttk.Treeview(self.table_frame, columns=(
+            "ID", "Proto", "RSSI", "Batt", "Temp", "GNSS", "Lat", "Lon", "Accel X/Y/Z", "Last Seen"
+        ), show="headings")
         
-        # Draw table headers
-        for col_idx, col_name in enumerate(self.columns):
-            lbl = ctk.CTkLabel(self.table_frame, text=col_name, font=ctk.CTkFont(weight="bold"), width=80, anchor="w")
-            lbl.grid(row=0, column=col_idx, padx=2, pady=5)
+        self.tree.heading("ID", text="Node ID")
+        self.tree.heading("Proto", text="Protocol")
+        self.tree.heading("RSSI", text="RSSI")
+        self.tree.heading("Batt", text="Batt (mV)")
+        self.tree.heading("Temp", text="Temp (°C)")
+        self.tree.heading("GNSS", text="Sats")
+        self.tree.heading("Lat", text="Latitude")
+        self.tree.heading("Lon", text="Longitude")
+        self.tree.heading("Accel X/Y/Z", text="Accel X/Y/Z")
+        self.tree.heading("Last Seen", text="Last Seen")
 
-        # Regex logic for fetching the data
-        # Example: I (12345) ESP_ZB_THERMOSTAT: Custom attr ACCEL_X (0x0005, S16): -100, from 0x1A2B
-        self.log_pattern = re.compile(
-            r"Custom attr (\w+)\s+\(0x[0-9a-fA-F]+,\s+[^\)]+\):\s+([^,]+),\s+from\s+0x([0-9a-fA-F]+)"
-        )
+        for col in self.tree["columns"]:
+            self.tree.column(col, width=100, anchor="center")
+        
+        self.tree.pack(expand=True, fill="both", padx=5, pady=5)
 
-        # Serial port setup
+        # --- Bottom Panel: Log Stream ---
+        self.log_frame = ctk.CTkFrame(self)
+        self.log_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+
+        self.log_label = ctk.CTkLabel(self.log_frame, text="Live Log Stream", font=ctk.CTkFont(size=16, weight="bold"))
+        self.log_label.pack(pady=5)
+
+        self.log_textbox = ctk.CTkTextbox(self.log_frame, state="disabled", wrap="word", font=ctk.CTkFont(family="Consolas", size=12))
+        self.log_textbox.pack(expand=True, fill="both", padx=5, pady=5)
+
+        # Serial setup
         self.port = port
         self.baudrate = baudrate
         self.serial_conn = None
         self.stop_event = threading.Event()
+        
+        self.nodes = {} # short_addr -> treeview_id
 
         self.start_serial_thread()
 
     def start_serial_thread(self):
         try:
-            self.serial_conn = serial.Serial(self.port, self.baudrate, timeout=1)
+            self.serial_conn = serial.Serial(self.port, self.baudrate, timeout=0.1)
             self.thread = threading.Thread(target=self.read_serial_data, daemon=True)
             self.thread.start()
-        except serial.SerialException as e:
-            self.header_label.configure(text=f"Error opening {self.port}: {e}", text_color="red")
+            self.append_log(f"Opened {self.port} at {self.baudrate} bps")
+        except Exception as e:
+            self.append_log(f"CRITICAL: Failed to open serial port: {e}")
 
     def read_serial_data(self):
+        buffer = bytearray()
         while not self.stop_event.is_set():
             if self.serial_conn and self.serial_conn.is_open:
                 try:
-                    line = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
-                    if line:
-                        self.after(0, self.append_log, line)
-                        self.parse_line(line)
+                    chunk = self.serial_conn.read(1024)
+                    if chunk:
+                        buffer.extend(chunk)
+                        
+                        # Process buffer for binary frames
+                        while len(buffer) >= REPORT_SIZE:
+                            # Look for sync bytes
+                            if buffer[0] == 0xAA and buffer[1] == 0x55:
+                                frame = buffer[:REPORT_SIZE]
+                                self.parse_binary_frame(frame)
+                                buffer = buffer[REPORT_SIZE:]
+                            else:
+                                # Not a frame, check if it's a standard log line
+                                try:
+                                    end_idx = buffer.find(b'\n')
+                                    if end_idx != -1:
+                                        line_bytes = buffer[:end_idx+1]
+                                        line = line_bytes.decode('utf-8', errors='ignore').strip()
+                                        if line:
+                                            self.after(0, self.append_log, line)
+                                        buffer = buffer[end_idx+1:]
+                                    else:
+                                        # No newline yet, wait or shift if buffer too large
+                                        if len(buffer) > 2048:
+                                            buffer = buffer[1:]
+                                        break
+                                except:
+                                    buffer = buffer[1:]
                 except Exception as e:
-                    print(f"Serial read error: {e}")
+                    print(f"Read error: {e}")
                     time.sleep(1)
+            else:
+                time.sleep(0.5)
+
+    def parse_binary_frame(self, frame):
+        try:
+            # Checksum verification
+            calc_sum = sum(frame[:-2]) & 0xFFFF
+            recv_sum = struct.unpack('<H', frame[-2:])[0]
+            
+            if calc_sum != recv_sum:
+                # self.after(0, self.append_log, f"DEBUG: Checksum mismatch (calc: {calc_sum:04X}, recv: {recv_sum:04X})")
+                return
+
+            # Unpack the report
+            # <BBBBBHbI64sH
+            _, _, length, protocol, report_type, src_addr, rssi, ts, payload_raw, _ = struct.unpack(REPORT_STRUCT_FMT, frame)
+            
+            proto_str = {PROTO_WIFI: "ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(protocol, "UNK")
+            
+            if report_type == REPORT_TYPE_SENSOR_DATA:
+                self.parse_sensor_data(src_addr, proto_str, rssi, payload_raw)
+            elif report_type == REPORT_TYPE_NODE_STATUS:
+                self.after(0, self.append_log, f"[{proto_str}] Node 0x{src_addr:04X} Status Update")
+            elif report_type == REPORT_TYPE_LOG_MESSAGE:
+                msg = payload_raw.decode('utf-8', errors='ignore').strip('\x00')
+                self.after(0, self.append_log, f"[{proto_str}] 0x{src_addr:04X}: {msg}")
+                
+        except Exception as e:
+            print(f"Parse error: {e}")
+
+    def parse_sensor_data(self, src_addr, proto_str, rssi, payload_raw):
+        try:
+            # Unpack uplink_payload_t
+            # <6sHBHHBiiHHHHHH
+            ieee_raw, _, _, batt, temp, sats, lat, lon, curr, ax, ay, az = struct.unpack(UPLINK_PAYLOAD_FMT, payload_raw[:UPLINK_PAYLOAD_SIZE])
+            
+            data = {
+                "ID": f"0x{src_addr:04X}",
+                "Proto": proto_str,
+                "RSSI": f"{rssi} dBm",
+                "Batt": f"{batt}",
+                "Temp": f"{temp/10.0-273.15:.2f}",
+                "GNSS": f"{sats}",
+                "Lat": f"{lat/1000000.0:.6f}",
+                "Lon": f"{lon/1000000.0:.6f}",
+                "Accel X/Y/Z": f"{ax}/{ay}/{az}",
+                "Last Seen": time.strftime('%H:%M:%S')
+            }
+            
+            self.after(0, self.update_table, data)
+        except Exception as e:
+            print(f"Uplink unpack error: {e}")
+
+    def update_table(self, data):
+        node_id = data["ID"]
+        values = [data[col] for col in self.tree["columns"]]
+        
+        if node_id in self.nodes:
+            self.tree.item(self.nodes[node_id], values=values)
+        else:
+            item_id = self.tree.insert("", "end", values=values)
+            self.nodes[node_id] = item_id
 
     def append_log(self, text):
         self.log_textbox.configure(state="normal")
-        self.log_textbox.insert("end", text + "\n")
+        self.log_textbox.insert("end", f"[{time.strftime('%H:%M:%S')}] {text}\n")
         self.log_textbox.see("end")
         self.log_textbox.configure(state="disabled")
-
-    def parse_line(self, line):
-        match = self.log_pattern.search(line)
-        if match:
-            attr_name = match.group(1)
-            value = match.group(2)
-            src_addr = f"0x{match.group(3).upper()}"
-
-            # Pass the GUI update back to the main thread securely
-            self.after(0, self.update_sensor_data, src_addr, attr_name, value)
-
-    def update_sensor_data(self, src_addr, attr_name, value):
-        row_idx = len(self.sensors) + 1 # +1 for header
-
-        if src_addr not in self.sensors:
-            self.sensors[src_addr] = {}
-            
-            # Create a label for Sensor ID
-            id_lbl = ctk.CTkLabel(self.table_frame, text=src_addr, anchor="w", text_color="#3498db", font=ctk.CTkFont(weight="bold"))
-            id_lbl.grid(row=row_idx, column=self.columns.index("Sensor ID"), padx=2, pady=2)
-            self.sensors[src_addr]["Sensor ID"] = id_lbl
-
-            # Create a label for Last Seen
-            time_lbl = ctk.CTkLabel(self.table_frame, text="", anchor="w")
-            time_lbl.grid(row=row_idx, column=self.columns.index("Last Seen"), padx=2, pady=2)
-            self.sensors[src_addr]["Last Seen"] = time_lbl
-
-            # Create empty labels for all attributes
-            for attr in ATTRIBUTES:
-                lbl = ctk.CTkLabel(self.table_frame, text="-", anchor="w", text_color="gray")
-                lbl.grid(row=row_idx, column=self.columns.index(attr), padx=2, pady=2)
-                self.sensors[src_addr][attr] = lbl
-
-        # Update Last Seen timestamp
-        current_time = time.strftime('%H:%M:%S')
-        self.sensors[src_addr]["Last Seen"].configure(text=current_time)
-
-        # Update Attribute
-        if attr_name in self.sensors[src_addr]:
-            # Highlight briefly by turning it green
-            lbl = self.sensors[src_addr][attr_name]
-            lbl.configure(text=value, text_color="#2ecc71")
-            
-            # After 1 second, revert the color back to standard text color
-            self.after(1000, lambda l=lbl: l.configure(text_color=("black", "white")))
-
-    def send_test_zcl_command(self):
-        if self.serial_conn and self.serial_conn.is_open:
-            if not self.sensors:
-                print("No sensors detected yet. Cannot send command.")
-                return
-            
-            attr_id_str = self.attr_id_entry.get().strip()
-            if not attr_id_str:
-                print("Please enter an attribute ID (e.g., 0x0007).")
-                return
-                
-            try:
-                attr_id = int(attr_id_str, 0)
-                attr_low = attr_id & 0xFF
-                attr_high = (attr_id >> 8) & 0xFF
-            except ValueError:
-                print("Invalid attribute ID format. Use hex (e.g., 0x0006) or integer.")
-                return
-
-            try:
-                for src_addr_str in self.sensors.keys():
-                    addr = int(src_addr_str, 16)
-                    addr_low = addr & 0xFF
-                    addr_high = (addr >> 8) & 0xFF
-                    # 0xAA = Sync1, 0x55 = Sync2, dest_short_addr(low, high), 0x00 = CHANGE_REPORT_CONFIG, attr_low, attr_high, 0x00
-                    payload = bytearray([0xAA, 0x55, addr_low, addr_high, 0x00, 0x00, attr_low, attr_high])
-                    self.serial_conn.write(payload)
-                    print(f"Sent hardcoded test configuration command (Attr ID: {attr_id_str}) to {src_addr_str}")
-            except Exception as e:
-                print(f"Failed to send command: {e}")
-        else:
-            print("Error: Serial connection is not open.")
-
-    def send_read_attributes_command(self):
-        if self.serial_conn and self.serial_conn.is_open:
-            if not self.sensors:
-                print("No sensors detected yet. Cannot send command.")
-                return
-            
-            attr_id_str = self.attr_id_entry.get().strip()
-            if not attr_id_str:
-                print("Please enter an attribute ID (e.g., 0x0006).")
-                return
-                
-            try:
-                attr_id = int(attr_id_str, 0)
-                attr_low = attr_id & 0xFF
-                attr_high = (attr_id >> 8) & 0xFF
-            except ValueError:
-                print("Invalid attribute ID format. Use hex (e.g., 0x0006) or integer.")
-                return
-                
-            try:
-                for src_addr_str in self.sensors.keys():
-                    addr = int(src_addr_str, 16)
-                    addr_low = addr & 0xFF
-                    addr_high = (addr >> 8) & 0xFF
-                    # 0xAA = Sync1, 0x55 = Sync2, dest_short_addr(low, high), 0x01 = READ_ATTRIBUTE, attr_low, attr_high, 0x00
-                    payload = bytearray([0xAA, 0x55, addr_low, addr_high, 0x01, 0x00, attr_low, attr_high])
-                    self.serial_conn.write(payload)
-                    print(f"Sent read attributes command (Attr ID: {attr_id_str}) to {src_addr_str}")
-            except Exception as e:
-                print(f"Failed to send read attributes command: {e}")
-        else:
-            print("Error: Serial connection is not open.")
-
-    def send_custom_payload(self):
-        if self.serial_conn and self.serial_conn.is_open:
-            payload_str = self.custom_payload_entry.get().strip()
-            if not payload_str:
-                print("Please enter a hex payload (e.g. AA 55 12 34).")
-                return
-            
-            try:
-                # Remove spaces and commas, split into bytes
-                # e.g. "AA 55 12", "AA, 55, 12", "0xAA 0x55"
-                clean_str = payload_str.replace(",", " ").replace("0x", " ")
-                hex_parts = [part.strip() for part in clean_str.split() if part.strip()]
-                
-                # Convert string list to bytearray
-                b_array = bytearray([int(h, 16) for h in hex_parts])
-                self.serial_conn.write(b_array)
-                print(f"Sent custom payload: {' '.join([f'{b:02X}' for b in b_array])}")
-            except ValueError as e:
-                print(f"Invalid payload format. Make sure it's valid hex: {e}")
-            except Exception as e:
-                print(f"Failed to send custom payload: {e}")
-        else:
-            print("Error: Serial connection is not open.")
 
     def on_closing(self):
         self.stop_event.set()
@@ -280,29 +233,18 @@ class ZigbeeMonitorApp(ctk.CTk):
             self.serial_conn.close()
         self.destroy()
 
-
-def get_available_ports():
-    return [port.device for port in serial.tools.list_ports.comports()]
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Graphical Zigbee Gateway Monitor")
-    parser.add_argument("-p", "--port", type=str, help="Serial GUI Port (e.g. COM3 or /dev/ttyUSB0)")
-    parser.add_argument("-b", "--baudrate", type=int, default=115200, help="Baudrate (default 115200)")
+    parser = argparse.ArgumentParser(description="Multi-Protocol Gateway Dashboard")
+    parser.add_argument("-p", "--port", type=str, help="Serial Port")
+    parser.add_argument("-b", "--baudrate", type=int, default=115200, help="Baudrate")
     args = parser.parse_args()
 
-    # If no port provided, try to auto-detect or request user input.
-    port = args.port
+    port = args.port or (serial.tools.list_ports.comports()[-1].device if serial.tools.list_ports.comports() else None)
     if not port:
-        ports = get_available_ports()
-        if not ports:
-            print("No serial ports detected. Please specify via -p flag.")
-            sys.exit(1)
-        port = ports[-1] # Usually the latest device plugged in (like a USB-UART)
+        print("No serial ports detected.")
+        sys.exit(1)
 
-    ctk.set_appearance_mode("System")
-    ctk.set_default_color_theme("blue")
-    
-    app = ZigbeeMonitorApp(port=port, baudrate=args.baudrate)
+    ctk.set_appearance_mode("Dark")
+    app = GatewayMonitorApp(port=port, baudrate=args.baudrate)
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
     app.mainloop()

@@ -31,6 +31,15 @@
 #error Define ZB_COORDINATOR_ROLE in idf.py menuconfig to compile thermostat source code.
 #endif
 
+typedef struct {
+    uint16_t short_addr;
+    uplink_payload_t data;
+} zigbee_node_shadow_t;
+
+#define MAX_ZIGBEE_NODES 32
+static zigbee_node_shadow_t node_shadows[MAX_ZIGBEE_NODES];
+static int node_shadow_count = 0;
+
 typedef struct zbstring_s {
     uint8_t len;
     char data[];
@@ -77,9 +86,40 @@ static const char *custom_attr_name(uint16_t attr_id)
     }
 }
 
+static zigbee_node_shadow_t* get_or_create_shadow(uint16_t short_addr) {
+    for (int i = 0; i < node_shadow_count; i++) {
+        if (node_shadows[i].short_addr == short_addr) {
+            return &node_shadows[i];
+        }
+    }
+    if (node_shadow_count < MAX_ZIGBEE_NODES) {
+        node_shadows[node_shadow_count].short_addr = short_addr;
+        memset(&node_shadows[node_shadow_count].data, 0, sizeof(uplink_payload_t));
+        node_shadows[node_shadow_count].data.short_addr = short_addr;
+        return &node_shadows[node_shadow_count++];
+    }
+    return NULL;
+}
+
+static void send_zigbee_report(uint16_t src_address) {
+    zigbee_node_shadow_t *shadow = get_or_create_shadow(src_address);
+    if (shadow) {
+        serial_report_t report = {0};
+        report.protocol = PROTO_ZIGBEE;
+        report.report_type = REPORT_TYPE_SENSOR_DATA;
+        report.src_short_addr = src_address;
+        report.rssi = -50; // Placeholder
+        report.timestamp = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        report.length = sizeof(uplink_payload_t);
+        memcpy(report.payload, &shadow->data, sizeof(uplink_payload_t));
+        gateway_send_report(&report);
+    }
+}
+
 static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute, uint16_t src_address)
 {
     const char *attr_name = custom_attr_name(attribute->id);
+    zigbee_node_shadow_t *shadow = get_or_create_shadow(src_address);
 
     if (!attribute->data.value) {
         ESP_LOGW(TAG, "Custom attr %s (0x%04x) has NULL value pointer", attr_name, attribute->id);
@@ -91,6 +131,7 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U8) {
             uint8_t value = *(uint8_t *)attribute->data.value;
             ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
+            if (shadow) shadow->data.gnss_sats = value;
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U8, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
@@ -103,6 +144,10 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
             int32_t value = *(int32_t *)attribute->data.value;
             ESP_LOGI(TAG, "Custom attr %s (0x%04x, S32): %" PRId32 ", from 0x%04x",
                      attr_name, attribute->id, value, src_address);
+            if (shadow) {
+                if (attribute->id == ATTR_LATITUDE) shadow->data.latitude = value;
+                else shadow->data.longitude = value;
+            }
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected S32, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
@@ -118,6 +163,16 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
             uint16_t value = *(uint16_t *)attribute->data.value;
             ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
+            if (shadow) {
+                switch(attribute->id) {
+                    case ATTR_TEMPERATURE: shadow->data.temperature = value; break;
+                    case ATTR_CURRENT_UA: shadow->data.current_ua = value; break;
+                    case ATTR_BATTERY_VOLTAGE: shadow->data.batt_level = value; break;
+                    case ATTR_ACCEL_X: shadow->data.accel_x = value; break;
+                    case ATTR_ACCEL_Y: shadow->data.accel_y = value; break;
+                    case ATTR_ACCEL_Z: shadow->data.accel_z = value; break;
+                }
+            }
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U16, got 0x%x",
                      attr_name, attribute->id, attribute->data.type);
@@ -129,6 +184,8 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
                  attr_name, attribute->id, attribute->data.type);
         break;
     }
+
+    send_zigbee_report(src_address);
 }
 
 void zigbee_read_attributes(serial_command_t cmd){

@@ -11,6 +11,49 @@
 #include "protocol.h"
 
 static const char *TAG = "USB_SERIAL";
+static QueueHandle_t serial_report_queue = NULL;
+
+void gateway_send_report(serial_report_t *report)
+{
+    if (serial_report_queue != NULL) {
+        if (xQueueSend(serial_report_queue, report, pdMS_TO_TICKS(10)) != pdTRUE) {
+            ESP_LOGW(TAG, "Serial report queue full. Dropping report.");
+        }
+    }
+}
+
+void serial_report_task(void *arg)
+{
+    serial_report_queue = xQueueCreate(20, sizeof(serial_report_t));
+    if (serial_report_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create serial report queue");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    serial_report_t report;
+    while (1) {
+        if (xQueueReceive(serial_report_queue, &report, portMAX_DELAY) == pdTRUE) {
+            // Calculate checksum (simple sum for now)
+            uint16_t checksum = 0;
+            uint8_t *data = (uint8_t *)&report;
+            size_t frame_size = sizeof(serial_report_t);
+            
+            // Set sync bytes
+            report.sync1 = SERIAL_SYNC_1;
+            report.sync2 = SERIAL_SYNC_2;
+            
+            // Exclude checksum field from sum calculation
+            for (size_t i = 0; i < frame_size - 2; i++) {
+                checksum += data[i];
+            }
+            report.checksum = checksum;
+
+            // Write to USB Serial JTAG
+            usb_serial_jtag_write_bytes(data, frame_size, pdMS_TO_TICKS(100));
+        }
+    }
+}
 
 void usb_serial_jtag_task(void *arg)
 {

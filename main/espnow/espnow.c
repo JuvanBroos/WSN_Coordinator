@@ -386,6 +386,17 @@ void espnow_task(void *pvParameter)
                     
                     // Update address map
                     update_addr_map(payload->short_addr, evt.info.recv_cb.mac_addr);
+
+                    // Send serial report to GUI
+                    serial_report_t report = {0};
+                    report.protocol = PROTO_WIFI;
+                    report.report_type = REPORT_TYPE_SENSOR_DATA;
+                    report.src_short_addr = payload->short_addr;
+                    report.rssi = -50; // Placeholder RSSI, if available from recv_info
+                    report.timestamp = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                    report.length = sizeof(uplink_payload_t);
+                    memcpy(report.payload, payload, sizeof(uplink_payload_t));
+                    gateway_send_report(&report);
                 } else {
                     ESP_LOGW(TAG, "Received ESP-NOW packet of unknown payload length: %d", payload_len);
                 }
