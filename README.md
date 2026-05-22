@@ -77,17 +77,19 @@ To ensure reliable data delivery to the host PC, the gateway utilizes a **Dedica
 The gateway accepts structured binary commands from the host PC to control remote nodes. Commands are protocol-aware and routed based on the `protocol` field.
 
 ### Command Structure (`serial_command_t`)
-Commands follow the `0xAA 0x55` framing and include a protocol selector (`0` for ESP-NOW, `1` for Zigbee) to ensure the gateway uses the correct radio and addressing scheme.
+Commands follow the `0xAA 0x55` framing and include a protocol selector (`0` for ESP-NOW, `1` for Zigbee, `2` for LoRa) to ensure the gateway uses the correct radio and addressing scheme. Supported commands include:
+- `CHANGE_PROTOCOL (0x02)`: Instructs the target node to gracefully switch to a new wireless protocol.
+- `CHANGE_SLEEP_INTERVAL (0x03)`: Instructs the target node to update its transmission delay dynamically without rebooting.
 
 ## Python Dashboard (`gui_monitor.py`)
 
 The project includes a high-performance **Multi-Protocol Gateway Dashboard** built with `customtkinter`. It provides a real-time visualization of the entire sensor network.
 
 ### Features
-- **Split-Screen Layout**: Top panel shows a live **Sensor Data Table**; bottom panel shows a **Live Log Stream**.
-- **Dynamic Node Discovery**: Automatically adds rows as new nodes (Zigbee or ESP-NOW) check in.
+- **Split-Screen Layout**: Top panel shows a live **Sensor Data Table**; bottom panel shows a **Live Log Stream**; the right panel features a **Command Execution Form**.
+- **Remote Commands**: Easily dispatch configuration changes (like Sleep Interval or Active Protocol) to specific nodes by entering their Hex ID in the right-hand panel. The GUI packs this into a binary `serial_command_t` and routes it via the gateway.
+- **Dynamic Node Discovery**: Automatically adds rows as new nodes (Zigbee, LoRa, or ESP-NOW) check in.
 - **High Fidelity**: Decodes binary `serial_report_t` frames for precise data rendering.
-- **Automatic Highlighting**: Briefly highlights updated cells to draw attention to incoming data.
 
 **Usage:**
 ```bash
