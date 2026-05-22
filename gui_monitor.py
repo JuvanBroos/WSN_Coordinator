@@ -48,6 +48,19 @@ REPORT_SIZE = struct.calcsize(REPORT_STRUCT_FMT)
 UPLINK_PAYLOAD_FMT = '<6sHBHHBiiHHHH'
 UPLINK_PAYLOAD_SIZE = struct.calcsize(UPLINK_PAYLOAD_FMT)
 
+# serial_command_t format: <BBBBHHHH
+# < : Little-endian
+# B : sync1 (0xAA)
+# B : sync2 (0x55)
+# B : protocol
+# B : command_type
+# H : dest_short_addr
+# H : command_value_1_min
+# H : command_value_2_max
+# H : command_value_3 (union: protocol or sleep_interval)
+COMMAND_STRUCT_FMT = '<BBBBHHHH'
+COMMAND_SIZE = struct.calcsize(COMMAND_STRUCT_FMT)
+
 class GatewayMonitorApp(ctk.CTk):
     def __init__(self, port, baudrate):
         super().__init__()
@@ -56,7 +69,8 @@ class GatewayMonitorApp(ctk.CTk):
         self.geometry("1200x800")
         
         # Configure grid
-        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=3)
+        self.grid_columnconfigure(1, weight=1) # Right: Command Panel
         self.grid_rowconfigure(0, weight=1) # Top: Table
         self.grid_rowconfigure(1, weight=1) # Bottom: Logs
 
@@ -102,6 +116,43 @@ class GatewayMonitorApp(ctk.CTk):
 
         self.log_textbox = ctk.CTkTextbox(self.log_frame, state="disabled", wrap="word", font=ctk.CTkFont(family="Consolas", size=12))
         self.log_textbox.pack(expand=True, fill="both", padx=5, pady=5)
+
+        # --- Right Panel: Command Form ---
+        self.command_frame = ctk.CTkFrame(self)
+        self.command_frame.grid(row=0, column=1, rowspan=2, padx=10, pady=10, sticky="nsew")
+        
+        self.command_label = ctk.CTkLabel(self.command_frame, text="Send Command", font=ctk.CTkFont(size=16, weight="bold"))
+        self.command_label.pack(pady=10)
+
+        # Target Address
+        self.target_addr_label = ctk.CTkLabel(self.command_frame, text="Target Address (Hex):")
+        self.target_addr_label.pack(pady=(10, 0))
+        self.target_addr_entry = ctk.CTkEntry(self.command_frame, placeholder_text="e.g. FFFF")
+        self.target_addr_entry.pack(pady=5)
+        
+        # Command Type
+        self.cmd_type_label = ctk.CTkLabel(self.command_frame, text="Command Type:")
+        self.cmd_type_label.pack(pady=(10, 0))
+        self.cmd_type_var = ctk.StringVar(value="Change Protocol")
+        self.cmd_type_combo = ctk.CTkOptionMenu(self.command_frame, variable=self.cmd_type_var, values=["Change Protocol", "Change Sleep Interval"])
+        self.cmd_type_combo.pack(pady=5)
+
+        # Protocol
+        self.proto_label = ctk.CTkLabel(self.command_frame, text="Protocol:")
+        self.proto_label.pack(pady=(10, 0))
+        self.proto_var = ctk.StringVar(value="WiFi/ESP-NOW")
+        self.proto_combo = ctk.CTkOptionMenu(self.command_frame, variable=self.proto_var, values=["WiFi/ESP-NOW", "Zigbee", "LoRa"])
+        self.proto_combo.pack(pady=5)
+
+        # Sleep Interval
+        self.sleep_label = ctk.CTkLabel(self.command_frame, text="Sleep Interval (s):")
+        self.sleep_label.pack(pady=(10, 0))
+        self.sleep_entry = ctk.CTkEntry(self.command_frame, placeholder_text="e.g. 10")
+        self.sleep_entry.pack(pady=5)
+
+        # Send Button
+        self.send_btn = ctk.CTkButton(self.command_frame, text="Execute Command", command=self.send_command)
+        self.send_btn.pack(pady=20)
 
         # Serial setup
         self.port = port
@@ -226,6 +277,62 @@ class GatewayMonitorApp(ctk.CTk):
         self.log_textbox.insert("end", f"[{time.strftime('%H:%M:%S')}] {text}\n")
         self.log_textbox.see("end")
         self.log_textbox.configure(state="disabled")
+
+    def send_command(self):
+        if not self.serial_conn or not self.serial_conn.is_open:
+            self.append_log("ERROR: Serial port not open.")
+            return
+
+        try:
+            target_addr_str = self.target_addr_entry.get().strip()
+            if not target_addr_str:
+                self.append_log("ERROR: Target Address required.")
+                return
+            target_addr = int(target_addr_str, 16)
+
+            cmd_type_str = self.cmd_type_var.get()
+            proto_str = self.proto_var.get()
+            
+            # Map enum values
+            cmd_type = 0x02 if cmd_type_str == "Change Protocol" else 0x03
+            
+            target_proto_enum = {"WiFi/ESP-NOW": PROTO_WIFI, "Zigbee": PROTO_ZIGBEE, "LoRa": PROTO_LORA}.get(proto_str, PROTO_WIFI)
+            
+            command_value_3 = 0
+            if cmd_type == 0x02: # CHANGE_PROTOCOL
+                command_value_3 = target_proto_enum
+            elif cmd_type == 0x03: # CHANGE_SLEEP_INTERVAL
+                sleep_str = self.sleep_entry.get().strip()
+                if not sleep_str:
+                    self.append_log("ERROR: Sleep Interval required.")
+                    return
+                command_value_3 = int(sleep_str)
+
+            # Determine route protocol from table (default to PROTO_WIFI if not found)
+            route_proto = PROTO_WIFI
+            for child in self.tree.get_children():
+                if self.tree.item(child)["values"][0] == f"0x{target_addr:04X}":
+                    p_str = self.tree.item(child)["values"][1]
+                    if p_str == "Zigbee": route_proto = PROTO_ZIGBEE
+                    elif p_str == "LoRa": route_proto = PROTO_LORA
+                    break
+            
+            frame = struct.pack(COMMAND_STRUCT_FMT,
+                0xAA, 0x55,
+                route_proto,
+                cmd_type,
+                target_addr,
+                0, 0, # command_value_1_min, command_value_2_max
+                command_value_3
+            )
+            
+            self.serial_conn.write(frame)
+            self.append_log(f"Sent command '{cmd_type_str}' to 0x{target_addr:04X} routed via {route_proto}")
+
+        except ValueError as ve:
+             self.append_log(f"ERROR: Invalid number format. {ve}")
+        except Exception as e:
+            self.append_log(f"ERROR formatting command: {e}")
 
     def on_closing(self):
         self.stop_event.set()

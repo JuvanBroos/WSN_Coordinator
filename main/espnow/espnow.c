@@ -81,10 +81,13 @@ void espnow_send_command(serial_command_t cmd) {
     if (cmd.command_type == CHANGE_PROTOCOL) {
         dl_payload->set_protocol = (uint8_t)cmd.command_value_3.protocol;
         dl_payload->sleep_interval = 0; // Default or from command
+    } else if (cmd.command_type == CHANGE_SLEEP_INTERVAL) {
+        dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
+        dl_payload->sleep_interval = cmd.command_value_3.sleep_interval;
     } else {
         // Handle other commands or set defaults
-        dl_payload->set_protocol = 0;
-        dl_payload->sleep_interval = 60; // Example
+        dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
+        dl_payload->sleep_interval = 0; // Example
     }
 
     espnow_data->crc = 0;

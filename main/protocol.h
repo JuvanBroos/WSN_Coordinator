@@ -20,6 +20,8 @@ typedef enum {
     PROTO_LORA,
 }protocol_to_run_t;
 
+#define PROTOCOL_NO_CHANGE 0xFF
+
 // --------------------------------------------------------
 // UPLINK PAYLOAD (End Node -> Gateway -> Pi)
 // --------------------------------------------------------
