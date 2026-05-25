@@ -134,7 +134,7 @@ class GatewayMonitorApp(ctk.CTk):
         self.cmd_type_label = ctk.CTkLabel(self.command_frame, text="Command Type:")
         self.cmd_type_label.pack(pady=(10, 0))
         self.cmd_type_var = ctk.StringVar(value="Change Protocol")
-        self.cmd_type_combo = ctk.CTkOptionMenu(self.command_frame, variable=self.cmd_type_var, values=["Change Protocol", "Change Sleep Interval"])
+        self.cmd_type_combo = ctk.CTkOptionMenu(self.command_frame, variable=self.cmd_type_var, values=["Change Protocol", "Change Sleep Interval", "Read Attributes"])
         self.cmd_type_combo.pack(pady=5)
 
         # Protocol
@@ -294,7 +294,14 @@ class GatewayMonitorApp(ctk.CTk):
             proto_str = self.proto_var.get()
             
             # Map enum values
-            cmd_type = 0x02 if cmd_type_str == "Change Protocol" else 0x03
+            if cmd_type_str == "Change Protocol":
+                cmd_type = 0x02
+            elif cmd_type_str == "Change Sleep Interval":
+                cmd_type = 0x03
+            elif cmd_type_str == "Read Attributes":
+                cmd_type = 0x01
+            else:
+                cmd_type = 0x02
             
             target_proto_enum = {"WiFi/ESP-NOW": PROTO_WIFI, "Zigbee": PROTO_ZIGBEE, "LoRa": PROTO_LORA}.get(proto_str, PROTO_WIFI)
             
@@ -307,6 +314,8 @@ class GatewayMonitorApp(ctk.CTk):
                     self.append_log("ERROR: Sleep Interval required.")
                     return
                 command_value_3 = int(sleep_str)
+            elif cmd_type == 0x01: # READ_ATTRIBUTE
+                command_value_3 = 0 # Default attribute ID 0 (All)
 
             # Determine route protocol from table (default to PROTO_WIFI if not found)
             route_proto = PROTO_WIFI

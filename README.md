@@ -96,8 +96,3 @@ The project includes a high-performance **Multi-Protocol Gateway Dashboard** bui
 python gui_monitor.py -p <SERIAL_PORT> -b 115200
 ```
 
-## Build, Flash, Monitor
-
-1. Set target: `idf.py set-target esp32c6`
-2. Erase flash: `idf.py -p PORT erase-flash`
-3. Build and Flash: `idf.py -p PORT build flash monitor`

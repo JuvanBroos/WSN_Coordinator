@@ -13,6 +13,7 @@
 #define MSG_TYPE_DATA   0x10
 #define MSG_TYPE_CONFIG 0x20
 #define MSG_TYPE_DISCOVERY_ACK 0x30
+#define MSG_TYPE_READ_REQ 0x40
 
 typedef enum {
     PROTO_WIFI,

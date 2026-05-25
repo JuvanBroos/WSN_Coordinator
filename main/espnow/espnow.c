@@ -76,16 +76,22 @@ void espnow_send_command(serial_command_t cmd) {
     downlink_payload_t *dl_payload = (downlink_payload_t *)espnow_data->payload;
 
     dl_payload->target_addr = cmd.dest_short_addr;
-    dl_payload->msg_type = MSG_TYPE_CONFIG;
     
     if (cmd.command_type == CHANGE_PROTOCOL) {
+        dl_payload->msg_type = MSG_TYPE_CONFIG;
         dl_payload->set_protocol = (uint8_t)cmd.command_value_3.protocol;
         dl_payload->sleep_interval = 0; // Default or from command
     } else if (cmd.command_type == CHANGE_SLEEP_INTERVAL) {
+        dl_payload->msg_type = MSG_TYPE_CONFIG;
         dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
         dl_payload->sleep_interval = cmd.command_value_3.sleep_interval;
+    } else if (cmd.command_type == READ_ATTRIBUTE) {
+        dl_payload->msg_type = MSG_TYPE_READ_REQ;
+        dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
+        dl_payload->sleep_interval = 0;
     } else {
         // Handle other commands or set defaults
+        dl_payload->msg_type = MSG_TYPE_CONFIG;
         dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
         dl_payload->sleep_interval = 0; // Example
     }
