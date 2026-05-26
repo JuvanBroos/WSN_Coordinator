@@ -4,6 +4,7 @@
 #include "zigbee_task.h"
 #include "serial/usb_serial.h"
 #include "espnow/espnow.h"
+#include "lora_manager.h"
 #include "protocol.h"
 
 void app_main(void)
@@ -23,6 +24,10 @@ void app_main(void)
     /* Start the ESPNOW network */
     wifi_init();
     espnow_init();
+
+    /* Start the LoRa network */
+    lora_init();
+    xTaskCreate(lora_task, "LoRa_Task", 4096, NULL, 5, NULL);
 
     /* Start the USB Serial JTAG task */
     xTaskCreate(usb_serial_jtag_task, "USB_Serial_JTAG", 4096, NULL, 5, NULL);
