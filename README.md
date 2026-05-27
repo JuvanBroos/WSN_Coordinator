@@ -54,6 +54,12 @@ The gateway also acts as an **Active ESP-NOW Coordinator**:
 - **Address Mapping**: Dynamically maps 16-bit virtual IDs (derived from MAC addresses) to full 48-bit hardware MACs, allowing the host PC to target ESP-NOW nodes using consistent 16-bit addressing.
 - **Active Monitoring**: Receives unicast telemetry bursts and instantly routes them to the reporting system.
 
+### 3. LoRa Gateway
+The gateway incorporates an interrupt-driven `lora_manager` to safely handle LoRa traffic:
+- **Continuous RX**: Listens passively for incoming LoRa frames without blocking other network tasks.
+- **Hardware Interrupts**: Uses a FreeRTOS Queue attached to the SX1262's `DIO1` pin for instant reaction to `RX_DONE` events.
+- **Thread-Safe SPI**: A dedicated FreeRTOS Mutex (`s_lora_spi_mutex`) wraps all driver access. This allows other gateway tasks (like USB Serial) to dispatch asynchronous downlink commands directly to the radio without corrupting the active continuous-receive state machine.
+
 ## Unified Serial Reporting System
 
 To ensure reliable data delivery to the host PC, the gateway utilizes a **Dedicated Reporting Task**. All incoming data (regardless of protocol) is packed into a standardized binary frame before transmission over the USB Serial JTAG interface.

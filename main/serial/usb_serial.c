@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "zigbee_task.h"
 #include "espnow.h"
+#include "lora_manager.h"
 #include "usb_serial.h"
 #include "protocol.h"
 
@@ -117,6 +118,9 @@ void usb_serial_jtag_task(void *arg)
         } else if (cmd.protocol == PROTO_WIFI) {
             ESP_LOGI(TAG, "ESPNOW: Command 0x%02x received for 0x%04x", cmd.command_type, cmd.dest_short_addr);
             espnow_send_command(cmd);
+        } else if (cmd.protocol == PROTO_LORA) {
+            ESP_LOGI(TAG, "LORA: Command 0x%02x received for 0x%04x", cmd.command_type, cmd.dest_short_addr);
+            lora_send_command(&cmd);
         } else {
             ESP_LOGW(TAG, "Unsupported protocol: 0x%02x", cmd.protocol);
         }
