@@ -11,9 +11,11 @@
 static const char *TAG = "LORA_MGR";
 static QueueHandle_t s_isr_queue = NULL;
 static SemaphoreHandle_t s_lora_spi_mutex = NULL;
+static SemaphoreHandle_t s_lora_ack_sem = NULL;
 
 void lora_init(void) {
     s_lora_spi_mutex = xSemaphoreCreateMutex();
+    s_lora_ack_sem = xSemaphoreCreateBinary();
     s_isr_queue = xQueueCreate(10, sizeof(lora_event_t));
 
     LoRaInit(); // Initialize LoRa SPI and Pins
@@ -71,14 +73,44 @@ void lora_send_command(serial_command_t *cmd) {
 
     uint8_t txLen = sizeof(downlink_payload_t);
     
-    xSemaphoreTake(s_lora_spi_mutex, portMAX_DELAY);
-    bool success = LoRaSend(buf, txLen, SX126x_TXMODE_ASYNC);
-    xSemaphoreGive(s_lora_spi_mutex);
+    int retries = 0;
+    const int MAX_RETRIES = 3;
+    bool ack_received = false;
 
-    if (success) {
-        ESP_LOGI(TAG, "Downlink command queued for 0x%04x via LoRa", cmd->dest_short_addr);
-    } else {
-        ESP_LOGE(TAG, "Failed to send downlink command via LoRa");
+    // Clear stale ACK semaphores
+    if (s_lora_ack_sem) {
+        xSemaphoreTake(s_lora_ack_sem, 0);
+    }
+
+    while (retries < MAX_RETRIES && !ack_received) {
+        xSemaphoreTake(s_lora_spi_mutex, portMAX_DELAY);
+        bool success = LoRaSend(buf, txLen, SX126x_TXMODE_ASYNC);
+        xSemaphoreGive(s_lora_spi_mutex);
+
+        if (!success) {
+            ESP_LOGE(TAG, "Failed to send downlink command via LoRa");
+            return;
+        }
+
+        if (cmd->dest_short_addr == BROADCAST_ADDR) {
+            ESP_LOGI(TAG, "Broadcast command queued via LoRa");
+            ack_received = true; // No ACK for broadcast
+        } else {
+            // Wait for ACK
+            if (s_lora_ack_sem && xSemaphoreTake(s_lora_ack_sem, pdMS_TO_TICKS(3000)) == pdTRUE) {
+                ack_received = true;
+            } else {
+                retries++;
+                ESP_LOGW(TAG, "Timeout waiting for Node ACK, retry %d", retries);
+                vTaskDelay(pdMS_TO_TICKS(500)); // Small backoff before retry
+            }
+        }
+    }
+
+    if (ack_received && cmd->dest_short_addr != BROADCAST_ADDR) {
+        ESP_LOGI(TAG, "Downlink command successfully acknowledged by 0x%04x", cmd->dest_short_addr);
+    } else if (!ack_received) {
+        ESP_LOGE(TAG, "Failed to deliver LoRa downlink to 0x%04x after %d retries", cmd->dest_short_addr, MAX_RETRIES);
     }
 }
 
@@ -107,18 +139,36 @@ void lora_task(void *pvParameters) {
                     
                     if (rxLen == sizeof(uplink_payload_t)) {
                         uplink_payload_t *payload = (uplink_payload_t *)rxBuf;
-                        ESP_LOGI(TAG, "Payload Data - ShortAddr: 0x%04x, Temp: %d", payload->short_addr, payload->temperature);
-                        
-                        // Send serial report to GUI
-                        serial_report_t report = {0};
-                        report.protocol = PROTO_LORA;
-                        report.report_type = REPORT_TYPE_SENSOR_DATA;
-                        report.src_short_addr = payload->short_addr;
-                        report.rssi = rssi;
-                        report.timestamp = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                        report.length = sizeof(uplink_payload_t);
-                        memcpy(report.payload, payload, sizeof(uplink_payload_t));
-                        gateway_send_report(&report);
+
+                        if (payload->msg_type == MSG_TYPE_ACK) {
+                            ESP_LOGI(TAG, "Received ACK from 0x%04x", payload->short_addr);
+                            if (s_lora_ack_sem) {
+                                xSemaphoreGive(s_lora_ack_sem);
+                            }
+                        } else {
+                            ESP_LOGI(TAG, "Payload Data - ShortAddr: 0x%04x, Temp: %d", payload->short_addr, payload->temperature);
+                            
+                            // Acknowledge the uplink
+                            downlink_payload_t ack_dl = {0};
+                            ack_dl.target_addr = payload->short_addr;
+                            ack_dl.msg_type = MSG_TYPE_ACK;
+                            
+                            // Send ACK back immediately but safely wrap in mutex
+                            // Since we are already holding s_lora_spi_mutex in lora_task locally, we can just call LoRaSend
+                            LoRaSend((uint8_t*)&ack_dl, sizeof(downlink_payload_t), SX126x_TXMODE_SYNC);
+                            ReceiveMode(); // Restore continuous RX mode
+
+                            // Send serial report to GUI
+                            serial_report_t report = {0};
+                            report.protocol = PROTO_LORA;
+                            report.report_type = REPORT_TYPE_SENSOR_DATA;
+                            report.src_short_addr = payload->short_addr;
+                            report.rssi = rssi;
+                            report.timestamp = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                            report.length = sizeof(uplink_payload_t);
+                            memcpy(report.payload, payload, sizeof(uplink_payload_t));
+                            gateway_send_report(&report);
+                        }
                     } else {
                         ESP_LOGW(TAG, "Unknown payload length: %d", rxLen);
                     }
