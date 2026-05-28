@@ -13,6 +13,9 @@ static QueueHandle_t s_isr_queue = NULL;
 static SemaphoreHandle_t s_lora_spi_mutex = NULL;
 static SemaphoreHandle_t s_lora_ack_sem = NULL;
 
+static bool s_pending_read_req = false;
+static uint16_t s_pending_read_target = 0;
+
 void lora_init(void) {
     s_lora_spi_mutex = xSemaphoreCreateMutex();
     s_lora_ack_sem = xSemaphoreCreateBinary();
@@ -65,6 +68,8 @@ void lora_send_command(serial_command_t *cmd) {
         dl_payload->msg_type = MSG_TYPE_READ_REQ;
         dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
         dl_payload->sleep_interval = 0;
+        s_pending_read_req = true;
+        s_pending_read_target = cmd->dest_short_addr;
     } else {
         dl_payload->msg_type = MSG_TYPE_CONFIG;
         dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
@@ -112,6 +117,9 @@ void lora_send_command(serial_command_t *cmd) {
     } else if (!ack_received) {
         ESP_LOGE(TAG, "Failed to deliver LoRa downlink to 0x%04x after %d retries", cmd->dest_short_addr, MAX_RETRIES);
     }
+
+    s_pending_read_req = false;
+    s_pending_read_target = 0;
 }
 
 void lora_task(void *pvParameters) {
@@ -157,6 +165,14 @@ void lora_task(void *pvParameters) {
                             // Since we are already holding s_lora_spi_mutex in lora_task locally, we can just call LoRaSend
                             LoRaSend((uint8_t*)&ack_dl, sizeof(downlink_payload_t), SX126x_TXMODE_SYNC);
                             ReceiveMode(); // Restore continuous RX mode
+
+                            // Check if this data satisfies a pending read request
+                            if (s_pending_read_req && payload->short_addr == s_pending_read_target) {
+                                ESP_LOGI(TAG, "Read req answered by telemetry payload from 0x%04x", payload->short_addr);
+                                if (s_lora_ack_sem) {
+                                    xSemaphoreGive(s_lora_ack_sem);
+                                }
+                            }
 
                             // Send serial report to GUI
                             serial_report_t report = {0};

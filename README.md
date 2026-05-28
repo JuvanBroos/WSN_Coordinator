@@ -59,6 +59,8 @@ The gateway incorporates an interrupt-driven `lora_manager` to safely handle LoR
 - **Continuous RX**: Listens passively for incoming LoRa frames without blocking other network tasks.
 - **Hardware Interrupts**: Uses a FreeRTOS Queue attached to the SX1262's `DIO1` pin for instant reaction to `RX_DONE` events.
 - **Thread-Safe SPI**: A dedicated FreeRTOS Mutex (`s_lora_spi_mutex`) wraps all driver access. This allows other gateway tasks (like USB Serial) to dispatch asynchronous downlink commands directly to the radio without corrupting the active continuous-receive state machine.
+- **Stop-and-Wait ARQ Integration**: Intercepts valid data uplinks and rapidly fires dedicated Acknowledgment (ACK) payloads synchronously to ensure remote nodes can sleep efficiently.
+- **Downlink Retries & Broadcasts**: Configuration commands dispatched to End Nodes automatically block via semaphore to await an ACK, retrying up to 3 times if no confirmation is received. Global network broadcasts (`0xFFFF`) are fully supported and dispatched independently of the ACK dependency chain to prevent collision storms.
 
 ## Unified Serial Reporting System
 
