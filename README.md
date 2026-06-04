@@ -60,6 +60,7 @@ The gateway incorporates an interrupt-driven `lora_manager` to safely handle LoR
 - **Hardware Interrupts**: Uses a FreeRTOS Queue attached to the SX1262's `DIO1` pin for instant reaction to `RX_DONE` events.
 - **Thread-Safe SPI**: A dedicated FreeRTOS Mutex (`s_lora_spi_mutex`) wraps all driver access. This allows other gateway tasks (like USB Serial) to dispatch asynchronous downlink commands directly to the radio without corrupting the active continuous-receive state machine.
 - **Stop-and-Wait ARQ Integration**: Intercepts valid data uplinks and rapidly fires dedicated Acknowledgment (ACK) payloads synchronously to ensure remote nodes can sleep efficiently.
+- **Asynchronous Polling (READ_REQ)**: Supports actively requesting live telemetry updates from remote sleeping nodes. Downstream thread waits efficiently on a semaphore until the targeted node replies with telemetry, utilizing the incoming data packet as an implicit ACK to unblock the sending thread.
 - **Downlink Retries & Broadcasts**: Configuration commands dispatched to End Nodes automatically block via semaphore to await an ACK, retrying up to 3 times if no confirmation is received. Global network broadcasts (`0xFFFF`) are fully supported and dispatched independently of the ACK dependency chain to prevent collision storms.
 
 ## Unified Serial Reporting System
@@ -88,6 +89,7 @@ The gateway accepts structured binary commands from the host PC to control remot
 Commands follow the `0xAA 0x55` framing and include a protocol selector (`0` for ESP-NOW, `1` for Zigbee, `2` for LoRa) to ensure the gateway uses the correct radio and addressing scheme. Supported commands include:
 - `CHANGE_PROTOCOL (0x02)`: Instructs the target node to gracefully switch to a new wireless protocol.
 - `CHANGE_SLEEP_INTERVAL (0x03)`: Instructs the target node to update its transmission delay dynamically without rebooting.
+- `READ_ATTRIBUTE (0x00)`: Prompts the target node to immediately fetch its active state and report it back (Polling).
 
 ## Python Dashboard (`gui_monitor.py`)
 

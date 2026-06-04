@@ -1,4 +1,4 @@
-set(component_srcs "ra01s.c" "ra01s_int.c")
+set(component_srcs "ra01s.c")
 
 idf_component_register(
 	SRCS "${component_srcs}"
