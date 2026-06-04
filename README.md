@@ -63,6 +63,26 @@ The gateway incorporates an interrupt-driven `lora_manager` to safely handle LoR
 - **Asynchronous Polling (READ_REQ)**: Supports actively requesting live telemetry updates from remote sleeping nodes. Downstream thread waits efficiently on a semaphore until the targeted node replies with telemetry, utilizing the incoming data packet as an implicit ACK to unblock the sending thread.
 - **Downlink Retries & Broadcasts**: Configuration commands dispatched to End Nodes automatically block via semaphore to await an ACK, retrying up to 3 times if no confirmation is received. Global network broadcasts (`0xFFFF`) are fully supported and dispatched independently of the ACK dependency chain to prevent collision storms.
 
+## Technical Implementation Details
+
+### 1. High-Performance Timing & Latency
+To ensure the Gateway can catch high-speed ACKs from End Nodes (which often reply within microseconds of a downlink), several low-level optimizations are implemented:
+- **RTOS Tick Rate**: The project configuration (`configTICK_RATE_HZ`) is set to **1000 Hz**. This reduces the minimum `vTaskDelay` and scheduling quantum to 1ms, preventing long 10ms "deaf periods" common in default ESP-IDF setups.
+- **Driver Polling**: The `ra01s.c` driver utilizes `delayMicroseconds()` rather than millisecond-level busy waits for radio state transitions. This allows the software to beat the physical arrival of the ACK preamble.
+
+### 2. LoRa State Manager & Deferral Logic
+The Gateway uses a specialized command queuing system in `lora_gw_state_mgr.c`:
+- **Active ACK Tracking**: When a downlink command is sent, the Gateway sets `waiting_for_ack_node.is_active = true` and starts a one-shot `ack_timeout_timer`.
+- **Event Deferral**: If a new serial command arrives while the Gateway is already waiting for an ACK, it is placed into `s_deferred_event`. A `deferral_timer` then reintroduces the command to the main processing loop once the previous transaction completes or times out.
+
+### 3. Thread Safety & Concurrency
+A dedicated FreeRTOS Mutex (`s_lora_spi_mutex`) protects all SPI transactions to the SX1262. This prevents the continuous background RX task and the asynchronous serial command dispatchers from causing bus contention or register corruption during overlapping SPI transactions.
+
+### 4. Serial Reporting Architecture
+All telemetry reports follow a strict framing protocol defined in `usb_serial.c` and `protocol.h`:
+- **Sync Bytes**: Every frame begins with `SERIAL_SYNC_1` (**0xAA**) and `SERIAL_SYNC_2` (**0x55**).
+- **Framing**: Reports use `serial_header_t` to declare the payload size, followed by the standardized `serial_report_t` body, and ending with a checksum for data integrity validation at the host PC.
+
 ## Unified Serial Reporting System
 
 To ensure reliable data delivery to the host PC, the gateway utilizes a **Dedicated Reporting Task**. All incoming data (regardless of protocol) is packed into a standardized binary frame before transmission over the USB Serial JTAG interface.
