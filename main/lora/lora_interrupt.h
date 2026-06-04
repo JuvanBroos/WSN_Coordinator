@@ -4,6 +4,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "serial/usb_serial.h"
 
 // The DIO1 hardware pin triggers on multiple events (RX_DONE, TX_DONE, etc.).
 // The ISR simply wakes the task, and the task must call GetIrqStatus() over SPI
@@ -16,6 +17,11 @@ typedef enum {
     LORA_EVENT_TIMEOUT_RTOS, // The retry timer
     LORA_EVENT_SERIAL_CMD,   // NEW: A command from the GUI
  } lora_event_type_t;
+
+ typedef struct {
+    lora_event_type_t type;
+    serial_command_t cmd_data; // Only populated if type == LORA_EVENT_SERIAL_CMD
+} lora_queue_item_t;
 
 
 /**

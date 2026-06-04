@@ -23,11 +23,6 @@ typedef struct {
 	TimerHandle_t ack_timer;  // The FreeRTOS timer
 } waiting_for_ack_t;
 
- typedef struct {
-    lora_event_type_t type;
-    serial_command_t cmd_data; // Only populated if type == LORA_EVENT_SERIAL_CMD
-} lora_queue_item_t;
-
 #define ACK_WAIT_TIME 500 // Time to wait for an ACK after sending 
 #define DEFERRAL_TIME 10
 

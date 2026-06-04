@@ -29,7 +29,8 @@ static void deferral_timer_callback(TimerHandle_t timer){
 }
 
 static void ack_timeout_timer_callback(TimerHandle_t xTimer) {
-    lora_event_type_t timeout_event = LORA_EVENT_TIMEOUT_RTOS;
+    lora_queue_item_t timeout_event;
+    timeout_event.type = LORA_EVENT_TIMEOUT_RTOS;
     xQueueSend(isr_queue, &timeout_event, portMAX_DELAY);
 }
 
@@ -307,12 +308,13 @@ void start_lora_task(void *pvParameters) {
     system_state = LORA_STATE_OFF;
 
     // Initialise DIO1 interrupt and queue
-    isr_queue = xQueueCreate(10, sizeof(lora_event_type_t));
+    isr_queue = xQueueCreate(10, sizeof(lora_queue_item_t));
     if (lora_int_init(isr_queue) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize LoRa interrupt wrapper");
     }
 
-    lora_event_type_t start_event = LORA_EVENT_BEGIN; 
+    lora_queue_item_t start_event;
+    start_event.type = LORA_EVENT_BEGIN;
     xQueueSend(isr_queue, &start_event, portMAX_DELAY);
 
     xTaskCreate(lora_state_machine_task, "lora_state_machine_task", 4096, pvParameters, 5, NULL);

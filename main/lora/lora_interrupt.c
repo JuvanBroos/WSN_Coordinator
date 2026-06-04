@@ -7,7 +7,8 @@ static QueueHandle_t s_isr_queue = NULL;
 
 static void IRAM_ATTR lora_gpio_isr_handler(void *arg) {
     if (s_isr_queue) {
-        lora_event_type_t evt = LORA_EVENT_DIO1_INTR;
+        lora_queue_item_t evt;
+        evt.type = LORA_EVENT_DIO1_INTR;
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         xQueueSendFromISR(s_isr_queue, &evt, &xHigherPriorityTaskWoken);
         if (xHigherPriorityTaskWoken) {
