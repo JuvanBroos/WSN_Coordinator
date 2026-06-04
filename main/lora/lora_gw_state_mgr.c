@@ -234,6 +234,9 @@ void lora_state_machine_task(void *pvParameters) {
                     } else if (payload.msg_type == MSG_TYPE_ACK) {
                         if (is_valid_ack_for_waiting_node(payload.short_addr)) {
                             ESP_LOGI(TAG, "ACK received from 0x%04X", payload.short_addr);
+                            if (waiting_for_ack_node.cmd.command_type == READ_ATTRIBUTE) {
+                                report_data(&payload); // The ACK payload contains the data for read attribute commands, so report it to the GUI
+                            }
                             clear_waiting_node();
                             //stay in listen continuously
                         } else {
