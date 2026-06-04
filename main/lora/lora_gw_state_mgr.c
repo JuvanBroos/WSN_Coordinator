@@ -240,8 +240,11 @@ void lora_state_machine_task(void *pvParameters) {
                             report_data(&recent_ul_payload);
                             system_state = LORA_STATE_TX_ACK;
                         } else if (is_valid_ack_for_waiting_node(recent_ul_payload.short_addr)) {
+                            ESP_LOGI(TAG, "ACK received from 0x%04X", recent_ul_payload.short_addr);
                             clear_waiting_node();
                             //stay in listen continuously
+                        } else {
+                            ESP_LOGW(TAG, "Received unknown LoRa packet or ACK from unexpected node 0x%04X", recent_ul_payload.short_addr);
                         }
                         break;
                     case LORA_EVENT_TIMEOUT_RTOS: 
@@ -251,10 +254,13 @@ void lora_state_machine_task(void *pvParameters) {
                         }
                         if (waiting_for_ack_node.retries < MAX_ACK_RETRIES) {
                             waiting_for_ack_node.retries++;
-                            lora_send_command(&q_item.cmd_data);
-                            //xTimerStart(waiting_for_ack_node.ack_timer, 0);
+                            ESP_LOGW(TAG, "ACK Timeout! Retrying command to 0x%04X (retry %d/%d)", 
+                                     waiting_for_ack_node.target_addr, waiting_for_ack_node.retries, MAX_ACK_RETRIES);
+                            lora_send_command(&waiting_for_ack_node.cmd);
                             system_state = LORA_STATE_TX_CMD;
                         } else {
+                            ESP_LOGE(TAG, "Failed to receive ACK from 0x%04X after %d retries", 
+                                     waiting_for_ack_node.target_addr, MAX_ACK_RETRIES);
                             clear_waiting_node(); // Failed to send command, keep listeinig
                         }
                         break;
