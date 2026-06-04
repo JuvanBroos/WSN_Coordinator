@@ -124,7 +124,7 @@ static void lora_send_command(serial_command_t *cmd) {
 
     uint8_t txLen = sizeof(downlink_payload_t);
 
-    LoRaSend(buf, txLen, SX126x_TXMODE_ASYNC);
+    LoRaSend(buf, txLen, SX126x_TXMODE_SYNC);
 }
 
 static void lora_send_ack(uint16_t target_short_addr) {
@@ -136,7 +136,7 @@ static void lora_send_ack(uint16_t target_short_addr) {
     dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
     dl_payload->sleep_interval = 0;
     uint8_t txlen = sizeof(downlink_payload_t);
-    LoRaSend(txbuf, txlen, SX126x_TXMODE_ASYNC);
+    LoRaSend(txbuf, txlen, SX126x_TXMODE_SYNC);
 }
 
 void lora_queue_command(serial_command_t *cmd) {
@@ -153,20 +153,27 @@ static bool process_event(lora_event_type_t *evt) {
         if (irq & SX126X_IRQ_TX_DONE){
             event_type = LORA_EVENT_TX_DONE;
             ReceiveMode(); // Resets txActive and goes to Continuous RX
+            ClearIrqStatus(SX126X_IRQ_TX_DONE); // Clear only TX_DONE
+            // If RX_DONE is also pending, queue another DIO1_INTR to process it next
+            if (irq & SX126X_IRQ_RX_DONE) {
+                lora_queue_item_t fake_isr;
+                fake_isr.type = LORA_EVENT_DIO1_INTR;
+                xQueueSendToFront(isr_queue, &fake_isr, 0);
+            }
         } else if (irq & SX126X_IRQ_RX_DONE) {
             event_type = LORA_EVENT_RX_DONE;
             rxlen = lora_read_rx_message(rxbuf, sizeof(rxbuf));
+            ClearIrqStatus(SX126X_IRQ_RX_DONE); // Clear only RX_DONE
         } else if (irq & SX126X_IRQ_TIMEOUT) {
             ESP_LOGE(TAG, "Timeout occurred on the SX1262!");
-            ClearIrqStatus(irq);
             ReceiveMode(); // Reset txActive flag in driver
+            ClearIrqStatus(SX126X_IRQ_TIMEOUT);
             return false;
         } else {
-            // Unrecognized event, clear IRQ and return
+            // Unrecognized event, clear all IRQs to recover
             ClearIrqStatus(irq);
             return false;
         }
-        ClearIrqStatus(irq);
     } else if (*evt == LORA_EVENT_TIMEOUT_RTOS) {
         event_type = LORA_EVENT_TIMEOUT_RTOS;
     } else if (*evt == LORA_EVENT_BEGIN) {
@@ -226,6 +233,7 @@ void lora_state_machine_task(void *pvParameters) {
                         if (!waiting_for_ack_node.is_active) {
                             setup_waiting_ack_node(&q_item.cmd_data);
                             lora_send_command(&q_item.cmd_data);
+                            //ClearIrqStatus(SX126X_IRQ_TX_DONE);
                             ESP_LOGI(TAG, "Sent command to node 0x%04X, waiting for ACK", q_item.cmd_data.dest_short_addr);
                             system_state = LORA_STATE_TX_CMD;
                         } else {
@@ -233,20 +241,30 @@ void lora_state_machine_task(void *pvParameters) {
                             defer_event(&q_item);
                         }
                         break;
-                    case LORA_EVENT_RX_DONE:
-                        uplink_payload_t recent_ul_payload;
-                        if(is_sensor_data(&recent_ul_payload)) {
-                            lora_send_ack(recent_ul_payload.short_addr);
-                            report_data(&recent_ul_payload);
-                            system_state = LORA_STATE_TX_ACK;
-                        } else if (is_valid_ack_for_waiting_node(recent_ul_payload.short_addr)) {
-                            ESP_LOGI(TAG, "ACK received from 0x%04X", recent_ul_payload.short_addr);
-                            clear_waiting_node();
-                            //stay in listen continuously
+                    case LORA_EVENT_RX_DONE: {
+                        uplink_payload_t payload;
+                        if (parse_rx_message(rxbuf, rxlen, &payload)) {
+                            if (payload.msg_type == MSG_TYPE_DATA) {
+                                lora_send_ack(payload.short_addr);
+                                //ClearIrqStatus(SX126X_IRQ_TX_DONE);
+                                report_data(&payload);
+                                system_state = LORA_STATE_TX_ACK;
+                            } else if (payload.msg_type == MSG_TYPE_ACK) {
+                                if (is_valid_ack_for_waiting_node(payload.short_addr)) {
+                                    ESP_LOGI(TAG, "ACK received from 0x%04X", payload.short_addr);
+                                    clear_waiting_node();
+                                    //stay in listen continuously
+                                } else {
+                                    ESP_LOGW(TAG, "ACK received from unexpected node 0x%04X", payload.short_addr);
+                                }
+                            } else {
+                                ESP_LOGW(TAG, "Received unknown msg_type 0x%02X from 0x%04X", payload.msg_type, payload.short_addr);
+                            }
                         } else {
-                            ESP_LOGW(TAG, "Received unknown LoRa packet or ACK from unexpected node 0x%04X", recent_ul_payload.short_addr);
+                             ESP_LOGW(TAG, "Received packet with invalid length: %d", rxlen);
                         }
                         break;
+                    }
                     case LORA_EVENT_TIMEOUT_RTOS: 
                         if (!waiting_for_ack_node.is_active){
                             //timeout but we were not waiting for something, error
@@ -257,6 +275,7 @@ void lora_state_machine_task(void *pvParameters) {
                             ESP_LOGW(TAG, "ACK Timeout! Retrying command to 0x%04X (retry %d/%d)", 
                                      waiting_for_ack_node.target_addr, waiting_for_ack_node.retries, MAX_ACK_RETRIES);
                             lora_send_command(&waiting_for_ack_node.cmd);
+                            //ClearIrqStatus(SX126X_IRQ_TX_DONE);
                             system_state = LORA_STATE_TX_CMD;
                         } else {
                             ESP_LOGE(TAG, "Failed to receive ACK from 0x%04X after %d retries", 
