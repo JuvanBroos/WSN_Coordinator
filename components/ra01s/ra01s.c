@@ -285,7 +285,7 @@ void LoRaConfig(uint8_t spreadingFactor, uint8_t bandwidth, uint8_t codingRate, 
 
 	// Use DIO1 for TX/RX/Timeout interrupts
 	SetDioIrqParams(SX126X_IRQ_ALL, //all interrupts enabled
-		(SX126X_IRQ_TX_DONE | SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT), //interrupts on DIO1
+		(SX126X_IRQ_RX_DONE | SX126X_IRQ_TIMEOUT), //interrupts on DIO1
 		SX126X_IRQ_NONE, //interrupts on DIO2
 		SX126X_IRQ_NONE //interrupts on DIO3
 	);

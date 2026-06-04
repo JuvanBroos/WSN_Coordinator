@@ -8,12 +8,12 @@
 #include "serial/usb_serial.h"
 #include "lora_interrupt.h"
 
-typedef enum {
-    LORA_STATE_OFF,
-    LORA_STATE_LISTEN_CONT,
-    LORA_STATE_TX_ACK,
-    LORA_STATE_TX_CMD,
-} lora_state_t; 
+// typedef enum {
+//     LORA_STATE_OFF,
+//     LORA_STATE_LISTEN_CONT,
+//     LORA_STATE_TX_ACK,
+//     LORA_STATE_TX_CMD,
+// } lora_state_t; 
 
 typedef struct {
 	bool is_active;           // Are we currently expecting an ACK?

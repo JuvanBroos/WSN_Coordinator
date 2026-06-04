@@ -11,7 +11,7 @@
 // to determine the exact cause.
 typedef enum {
     LORA_EVENT_DIO1_INTR,
-    LORA_EVENT_BEGIN,
+    //LORA_EVENT_BEGIN,
     LORA_EVENT_RX_DONE,
     LORA_EVENT_TX_DONE,
     LORA_EVENT_TIMEOUT_RTOS, // The retry timer
