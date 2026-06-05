@@ -134,7 +134,7 @@ class GatewayMonitorApp(ctk.CTk):
         self.cmd_type_label = ctk.CTkLabel(self.command_frame, text="Command Type:")
         self.cmd_type_label.pack(pady=(10, 0))
         self.cmd_type_var = ctk.StringVar(value="Change Protocol")
-        self.cmd_type_combo = ctk.CTkOptionMenu(self.command_frame, variable=self.cmd_type_var, values=["Change Protocol", "Change Sleep Interval", "Read Attributes"])
+        self.cmd_type_combo = ctk.CTkOptionMenu(self.command_frame, variable=self.cmd_type_var, values=["Change Protocol", "Change Sleep Interval", "Read Attributes", "Trigger GNSS"])
         self.cmd_type_combo.pack(pady=5)
 
         # Protocol
@@ -300,6 +300,8 @@ class GatewayMonitorApp(ctk.CTk):
                 cmd_type = 0x03
             elif cmd_type_str == "Read Attributes":
                 cmd_type = 0x01
+            elif cmd_type_str == "Trigger GNSS":
+                cmd_type = 0x04
             else:
                 cmd_type = 0x02
             

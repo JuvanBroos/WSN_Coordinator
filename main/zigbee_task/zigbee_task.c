@@ -26,6 +26,7 @@
 #define ATTR_SLEEP_INTERVAL   0x0009
 #define ATTR_BATTERY_VOLTAGE  0x000A
 #define ATTR_TEMPERATURE      0x000B
+#define ATTR_START_GNSS       0x000C
 
 #if defined ZB_ED_ROLE
 #error Define ZB_COORDINATOR_ROLE in idf.py menuconfig to compile thermostat source code.
@@ -344,7 +345,31 @@ void zigbee_change_protocol(serial_command_t cmd){
     esp_zb_zcl_write_attr_cmd_req(&write_cmd);
     esp_zb_lock_release();
     ESP_EARLY_LOGI(TAG, "Send 'write attributes' command to change protocol");
+}
 
+void zigbee_start_gnss(serial_command_t cmd){
+    esp_zb_zcl_write_attr_cmd_t write_cmd = {0};
+    write_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
+    write_cmd.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
+    write_cmd.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
+    write_cmd.zcl_basic_cmd.dst_addr_u.addr_short = cmd.dest_short_addr;
+    write_cmd.clusterID = CUSTOM_CLUSTER_ID;
+
+    uint8_t dummy_val = 1;
+    esp_zb_zcl_attribute_t attributes[] = {
+        {
+            .id = ATTR_START_GNSS,
+            .data.type = ESP_ZB_ZCL_ATTR_TYPE_U8,
+            .data.value = &dummy_val
+        },
+    };
+    write_cmd.attr_number = ARRAY_LENGTH(attributes);
+    write_cmd.attr_field = attributes;
+
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_zb_zcl_write_attr_cmd_req(&write_cmd);
+    esp_zb_lock_release();
+    ESP_EARLY_LOGI(TAG, "Send 'write attributes' command to start GNSS");
 }
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)

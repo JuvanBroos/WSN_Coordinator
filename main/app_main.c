@@ -4,7 +4,7 @@
 #include "zigbee_task.h"
 #include "serial/usb_serial.h"
 #include "espnow/espnow.h"
-#include "lora_manager.h"
+//#include "lora_manager.h"
 #include "protocol.h"
 #include "lora_gw_state_mgr.h"
 

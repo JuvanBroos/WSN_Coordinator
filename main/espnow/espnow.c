@@ -85,6 +85,10 @@ void espnow_send_command(serial_command_t cmd) {
         dl_payload->msg_type = MSG_TYPE_CONFIG;
         dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
         dl_payload->sleep_interval = cmd.command_value_3.sleep_interval;
+    } else if (cmd.command_type == START_GNSS) {
+        dl_payload->msg_type = MSG_TYPE_START_GNSS;
+        dl_payload->set_protocol = PROTOCOL_NO_CHANGE;
+        dl_payload->sleep_interval = 0;
     } else if (cmd.command_type == READ_ATTRIBUTE) {
         dl_payload->msg_type = MSG_TYPE_READ_REQ;
         dl_payload->set_protocol = PROTOCOL_NO_CHANGE;

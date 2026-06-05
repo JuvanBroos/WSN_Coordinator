@@ -12,7 +12,7 @@ typedef enum {
     READ_ATTRIBUTE = 0x01,
     CHANGE_PROTOCOL = 0x02,
     CHANGE_SLEEP_INTERVAL = 0x03,
-    PLACEHOLDER_1 = 0x04,
+    START_GNSS = 0x04,
 } serial_command_type_t;
 
 typedef struct __attribute__((packed)) serial_command_s {

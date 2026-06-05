@@ -112,6 +112,11 @@ void usb_serial_jtag_task(void *arg)
                     zigbee_change_protocol(cmd);
                     break;
 
+                case START_GNSS:
+                    ESP_LOGI(TAG, "ZIGBEE: START_GNSS for 0x%04x", cmd.dest_short_addr);
+                    zigbee_start_gnss(cmd);
+                    break;
+
                 default:
                     ESP_LOGW(TAG, "ZIGBEE: Unknown command_type 0x%02x", cmd.command_type);
                     break;
