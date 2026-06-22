@@ -184,6 +184,7 @@ void espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, i
     evt.id = ESPNOW_RECV_CB;
     memcpy(recv_cb->mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
     recv_cb->is_broadcast = IS_BROADCAST_ADDR(des_addr);
+    recv_cb->rssi = recv_info->rx_ctrl->rssi;
     recv_cb->data = malloc(len);
     if (recv_cb->data == NULL) {
         ESP_LOGE(TAG, "Malloc receive data fail");
@@ -400,7 +401,7 @@ void espnow_task(void *pvParameter)
                     report.protocol = PROTO_WIFI;
                     report.report_type = REPORT_TYPE_SENSOR_DATA;
                     report.src_short_addr = payload->short_addr;
-                    report.rssi = -50; // Placeholder RSSI, if available from recv_info
+                    report.rssi = evt.info.recv_cb.rssi;
                     report.timestamp = xTaskGetTickCount() * portTICK_PERIOD_MS;
                     report.length = sizeof(uplink_payload_t);
                     memcpy(report.payload, payload, sizeof(uplink_payload_t));

@@ -15,6 +15,8 @@ static QueueHandle_t isr_queue = NULL;
 //lora_state_t system_state = LORA_STATE_OFF;
 uint8_t rxbuf[255];
 uint8_t rxlen = 0;
+static int8_t current_rssi;
+static int8_t current_snr;
 
 
 static waiting_for_ack_t waiting_for_ack_node;
@@ -69,7 +71,7 @@ static void report_data(uplink_payload_t *ul_payload) {
     report.protocol = PROTO_LORA;
     report.report_type = REPORT_TYPE_SENSOR_DATA;
     report.src_short_addr = ul_payload->short_addr;
-    report.rssi = 50;//rssi;
+    report.rssi = current_rssi;
     report.timestamp = xTaskGetTickCount() * portTICK_PERIOD_MS;
     report.length = sizeof(uplink_payload_t);
     memcpy(report.payload, ul_payload, sizeof(uplink_payload_t));
@@ -157,6 +159,7 @@ static bool process_event(lora_event_type_t *evt) {
         if (irq & SX126X_IRQ_RX_DONE) {
             event_type = LORA_EVENT_RX_DONE;
             rxlen = lora_read_rx_message(rxbuf, sizeof(rxbuf));
+            GetPacketStatus(&current_rssi, &current_snr);
             ClearIrqStatus(SX126X_IRQ_RX_DONE); // Clear only RX_DONE
         } else if (irq & SX126X_IRQ_TIMEOUT) {
             ESP_LOGE(TAG, "Timeout occurred on the SX1262!");

@@ -9,7 +9,8 @@
 #include "freertos/task.h"
 #include "ha/esp_zigbee_ha_standard.h"
 #include "usb_serial.h" 
-
+#include "esp_ieee802154.h"
+#include "hal/ieee802154_ll.h"
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
 
 #define CUSTOM_CLUSTER_ID 0xFF01
@@ -109,7 +110,7 @@ static void send_zigbee_report(uint16_t src_address) {
         report.protocol = PROTO_ZIGBEE;
         report.report_type = REPORT_TYPE_SENSOR_DATA;
         report.src_short_addr = src_address;
-        report.rssi = -50; // Placeholder
+        report.rssi = esp_ieee802154_get_recent_rssi();
         report.timestamp = xTaskGetTickCount() * portTICK_PERIOD_MS;
         report.length = sizeof(uplink_payload_t);
         memcpy(report.payload, &shadow->data, sizeof(uplink_payload_t));

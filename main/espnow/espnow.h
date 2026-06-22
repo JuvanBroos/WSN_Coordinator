@@ -43,6 +43,7 @@ typedef struct {
     uint8_t *data;
     int data_len;
     bool is_broadcast;
+    int8_t rssi;
 } espnow_event_recv_cb_t;
 
 typedef union {

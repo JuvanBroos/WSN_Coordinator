@@ -40,5 +40,5 @@ void app_main(void)
     //zigbee_read_attributes();
     vTaskDelay(pdMS_TO_TICKS(60000)); // Delay to ensure Zigbee task is up before sending test config
     //zigbee_send_test_config();
-    xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
+    //xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 }
