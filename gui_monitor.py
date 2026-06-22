@@ -7,6 +7,9 @@ import time
 import sys
 import argparse
 import struct
+import os
+import csv
+from datetime import datetime
 
 # Protocol Enums (must match protocol.h)
 PROTO_WIFI = 0
@@ -62,7 +65,7 @@ COMMAND_STRUCT_FMT = '<BBBBHHHH'
 COMMAND_SIZE = struct.calcsize(COMMAND_STRUCT_FMT)
 
 class GatewayMonitorApp(ctk.CTk):
-    def __init__(self, port, baudrate):
+    def __init__(self, ports_config, baudrate):
         super().__init__()
 
         self.title("Multi-Protocol Gateway Dashboard")
@@ -155,30 +158,49 @@ class GatewayMonitorApp(ctk.CTk):
         self.send_btn.pack(pady=20)
 
         # Serial setup
-        self.port = port
+        self.ports_config = ports_config
         self.baudrate = baudrate
-        self.serial_conn = None
+        self.serial_conns = {}
         self.stop_event = threading.Event()
         
         self.nodes = {} # short_addr -> treeview_id
 
-        self.start_serial_thread()
+        self.setup_csv_logging()
+        self.start_serial_threads()
 
-    def start_serial_thread(self):
+    def setup_csv_logging(self):
+        os.makedirs("logs", exist_ok=True)
+        filename = datetime.now().strftime("%Y%m%d_%H%M%S.csv")
+        self.csv_filepath = os.path.join("logs", filename)
+        self.csv_lock = threading.Lock()
+        
         try:
-            self.serial_conn = serial.Serial(self.port, self.baudrate, timeout=0.1)
-            self.thread = threading.Thread(target=self.read_serial_data, daemon=True)
-            self.thread.start()
-            self.append_log(f"Opened {self.port} at {self.baudrate} bps")
+            with open(self.csv_filepath, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Timestamp", "Node ID", "Protocol", "RSSI", "Batt (mV)", "Temp (C)", "GNSS Sats", "Latitude", "Longitude", "Accel X/Y/Z"])
+            self.append_log(f"Started CSV logging to {self.csv_filepath}")
         except Exception as e:
-            self.append_log(f"CRITICAL: Failed to open serial port: {e}")
+            self.append_log(f"CRITICAL: Failed to setup CSV logging: {e}")
 
-    def read_serial_data(self):
+    def start_serial_threads(self):
+        for proto, port in self.ports_config.items():
+            if port:
+                try:
+                    conn = serial.Serial(port, self.baudrate, timeout=0.1)
+                    self.serial_conns[proto] = conn
+                    thread = threading.Thread(target=self.read_serial_data, args=(conn, proto), daemon=True)
+                    thread.start()
+                    proto_name = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(proto, "UNK")
+                    self.append_log(f"Opened {port} for {proto_name} at {self.baudrate} bps")
+                except Exception as e:
+                    self.append_log(f"CRITICAL: Failed to open serial port {port}: {e}")
+
+    def read_serial_data(self, conn, expected_proto):
         buffer = bytearray()
         while not self.stop_event.is_set():
-            if self.serial_conn and self.serial_conn.is_open:
+            if conn and conn.is_open:
                 try:
-                    chunk = self.serial_conn.read(1024)
+                    chunk = conn.read(1024)
                     if chunk:
                         buffer.extend(chunk)
                         
@@ -197,7 +219,7 @@ class GatewayMonitorApp(ctk.CTk):
                                         line_bytes = buffer[:end_idx+1]
                                         line = line_bytes.decode('utf-8', errors='ignore').strip()
                                         if line:
-                                            self.after(0, self.append_log, line)
+                                            self.after(0, self.append_log, f"[{expected_proto}] {line}")
                                         buffer = buffer[end_idx+1:]
                                     else:
                                         # No newline yet, wait or shift if buffer too large
@@ -219,7 +241,6 @@ class GatewayMonitorApp(ctk.CTk):
             recv_sum = struct.unpack('<H', frame[-2:])[0]
             
             if calc_sum != recv_sum:
-                # self.after(0, self.append_log, f"DEBUG: Checksum mismatch (calc: {calc_sum:04X}, recv: {recv_sum:04X})")
                 return
 
             # Unpack the report
@@ -245,6 +266,10 @@ class GatewayMonitorApp(ctk.CTk):
             # <6sHBHHBiiHHHHHH
             ieee_raw, _, _, batt, temp, sats, lat, lon, curr, ax, ay, az = struct.unpack(UPLINK_PAYLOAD_FMT, payload_raw[:UPLINK_PAYLOAD_SIZE])
             
+            now = datetime.now()
+            time_str = now.strftime('%H:%M:%S')
+            full_timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
+            
             data = {
                 "ID": f"0x{src_addr:04X}",
                 "Proto": proto_str,
@@ -255,8 +280,21 @@ class GatewayMonitorApp(ctk.CTk):
                 "Lat": f"{lat/1000000.0:.6f}",
                 "Lon": f"{lon/1000000.0:.6f}",
                 "Accel X/Y/Z": f"{ax}/{ay}/{az}",
-                "Last Seen": time.strftime('%H:%M:%S')
+                "Last Seen": time_str
             }
+            
+            # Log to CSV
+            with self.csv_lock:
+                try:
+                    with open(self.csv_filepath, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([
+                            full_timestamp, data["ID"], data["Proto"], data["RSSI"], 
+                            data["Batt"], data["Temp"], data["GNSS"], 
+                            data["Lat"], data["Lon"], data["Accel X/Y/Z"]
+                        ])
+                except Exception as e:
+                    print(f"CSV write error: {e}")
             
             self.after(0, self.update_table, data)
         except Exception as e:
@@ -279,10 +317,6 @@ class GatewayMonitorApp(ctk.CTk):
         self.log_textbox.configure(state="disabled")
 
     def send_command(self):
-        if not self.serial_conn or not self.serial_conn.is_open:
-            self.append_log("ERROR: Serial port not open.")
-            return
-
         try:
             target_addr_str = self.target_addr_entry.get().strip()
             if not target_addr_str:
@@ -328,6 +362,11 @@ class GatewayMonitorApp(ctk.CTk):
                     elif p_str == "LoRa": route_proto = PROTO_LORA
                     break
             
+            if route_proto not in self.serial_conns or not self.serial_conns[route_proto].is_open:
+                proto_name = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(route_proto, "UNK")
+                self.append_log(f"ERROR: Cannot route command to 0x{target_addr:04X}. No active serial connection for {proto_name}.")
+                return
+            
             frame = struct.pack(COMMAND_STRUCT_FMT,
                 0xAA, 0x55,
                 route_proto,
@@ -337,8 +376,9 @@ class GatewayMonitorApp(ctk.CTk):
                 command_value_3
             )
             
-            self.serial_conn.write(frame)
-            self.append_log(f"Sent command '{cmd_type_str}' to 0x{target_addr:04X} routed via {route_proto}")
+            self.serial_conns[route_proto].write(frame)
+            proto_name = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(route_proto, "UNK")
+            self.append_log(f"Sent command '{cmd_type_str}' to 0x{target_addr:04X} routed via {proto_name}")
 
         except ValueError as ve:
              self.append_log(f"ERROR: Invalid number format. {ve}")
@@ -347,22 +387,34 @@ class GatewayMonitorApp(ctk.CTk):
 
     def on_closing(self):
         self.stop_event.set()
-        if self.serial_conn and self.serial_conn.is_open:
-            self.serial_conn.close()
+        for conn in self.serial_conns.values():
+            if conn and conn.is_open:
+                conn.close()
         self.destroy()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Multi-Protocol Gateway Dashboard")
-    parser.add_argument("-p", "--port", type=str, help="Serial Port")
+    parser.add_argument("--wifi", type=str, help="Serial Port for WiFi/ESP-NOW Gateway (e.g., COM3)")
+    parser.add_argument("--zigbee", type=str, help="Serial Port for Zigbee Gateway (e.g., COM4)")
+    parser.add_argument("--lora", type=str, help="Serial Port for LoRa Gateway (e.g., COM5)")
     parser.add_argument("-b", "--baudrate", type=int, default=115200, help="Baudrate")
     args = parser.parse_args()
 
-    port = args.port or (serial.tools.list_ports.comports()[-1].device if serial.tools.list_ports.comports() else None)
-    if not port:
-        print("No serial ports detected.")
-        sys.exit(1)
+    ports_config = {}
+    if args.wifi: ports_config[PROTO_WIFI] = args.wifi
+    if args.zigbee: ports_config[PROTO_ZIGBEE] = args.zigbee
+    if args.lora: ports_config[PROTO_LORA] = args.lora
+
+    if not ports_config:
+        # Fallback to single port mode if none specified
+        port = serial.tools.list_ports.comports()[-1].device if serial.tools.list_ports.comports() else None
+        if not port:
+            print("No serial ports detected and no ports specified.")
+            sys.exit(1)
+        print(f"No specific protocol ports provided. Defaulting to port {port} for WiFi.")
+        ports_config[PROTO_WIFI] = port
 
     ctk.set_appearance_mode("Dark")
-    app = GatewayMonitorApp(port=port, baudrate=args.baudrate)
+    app = GatewayMonitorApp(ports_config=ports_config, baudrate=args.baudrate)
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
     app.mainloop()

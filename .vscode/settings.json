@@ -4,7 +4,7 @@
   ],
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32c6",
-    "OPENOCD_USB_ADAPTER_LOCATION": "1-3"
+    "OPENOCD_USB_ADAPTER_LOCATION": "1-1"
   },
   "idf.portWin": "COM4",
   "idf.flashType": "JTAG",

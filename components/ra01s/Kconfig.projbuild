@@ -170,7 +170,7 @@ menu "SX126X Configuration"
 	config DIO1_GPIO
 		int "SX126X DIO1 GPIO"
 		range -1 GPIO_RANGE_MAX
-		default -1
+		default 23
 		help
 			Pin Number to be used as the DIO1 interrupt signal.
 
