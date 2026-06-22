@@ -134,6 +134,8 @@ void wifi_init(void)
     ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
     ESP_ERROR_CHECK( esp_wifi_set_mode(ESPNOW_WIFI_MODE) );
     ESP_ERROR_CHECK( esp_wifi_start());
+    ESP_ERROR_CHECK( esp_wifi_set_ps(WIFI_PS_NONE) ); // Disable modem sleep
+    ESP_ERROR_CHECK( esp_wifi_set_promiscuous(true) ); // Force radio to listen to all packets (workaround for C6)
     ESP_ERROR_CHECK( esp_wifi_set_channel(CONFIG_ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE));
 
 #if CONFIG_ESPNOW_ENABLE_LONG_RANGE
@@ -170,6 +172,8 @@ void espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, i
         ESP_LOGE(TAG, "Receive cb arg error");
         return;
     }
+    
+    //ESP_LOGI(TAG, "MAC LAYER TRIGGERED RECV_CB FROM "MACSTR, MAC2STR(mac_addr));
 
     if (IS_BROADCAST_ADDR(des_addr)) {
         ESP_LOGD(TAG, "Receive broadcast ESPNOW data");
@@ -317,23 +321,10 @@ void espnow_task(void *pvParameter)
     espnow_event_t evt;
     int ret;
 
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
-    ESP_LOGI(TAG, "Start sending broadcast data");
-
-
-    /* Start sending broadcast ESPNOW data. */
+    /* Gateway does not need to send an initial broadcast.
+       It should only listen for End Node discoveries and reply to them. */
     espnow_send_param_t *send_param = (espnow_send_param_t *)pvParameter;
 
-    espnow_data_prepare(send_param);
-
-    if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
-        ESP_LOGE(TAG, "Send error");
-        espnow_deinit();
-        vTaskDelete(NULL);
-    } else {
-        ESP_LOGI(TAG, "Sent broadcast data");
-        //vTaskDelete(NULL);
-    }
 
     while (xQueueReceive(espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
         switch (evt.id) {
@@ -344,9 +335,13 @@ void espnow_task(void *pvParameter)
             }
             case ESPNOW_RECV_CB:
             {
-                //ret = espnow_data_parse(evt.info.recv_cb.data, evt.info.recv_cb.data_len, &recv_state, &recv_seq, &recv_magic);
                 ret = espnow_data_parse(evt.info.recv_cb.data, evt.info.recv_cb.data_len);
-                ESP_LOGI(TAG, "Received data from "MACSTR" ", MAC2STR(evt.info.recv_cb.mac_addr));
+                if (ret < 0) {
+                    ESP_LOGE(TAG, "Receive ESPNOW data parse error (CRC mismatch)");
+                    free(evt.info.recv_cb.data);
+                    break;
+                }
+                //ESP_LOGI(TAG, "Received data from "MACSTR" ", MAC2STR(evt.info.recv_cb.mac_addr));
 
                 espnow_data_t *recv_buf = (espnow_data_t *)evt.info.recv_cb.data;
                 size_t payload_len = evt.info.recv_cb.data_len - sizeof(espnow_data_t);
@@ -394,8 +389,8 @@ void espnow_task(void *pvParameter)
                     }
                 } else if (payload_len == sizeof(uplink_payload_t)) {
                     uplink_payload_t *payload = (uplink_payload_t *)recv_buf->payload;
-                    ESP_LOGI(TAG, "Payload Data - ShortAddr: 0x%04x, Temp: %d, Accel X: %d, Y: %d, Z: %d, Curr: %d, Batt: %d", 
-                                payload->short_addr, payload->temperature, payload->accel_x, payload->accel_y, payload->accel_z, payload->current_ua, payload->batt_level);
+                    //ESP_LOGI(TAG, "Payload Data - ShortAddr: 0x%04x, Temp: %d, Accel X: %d, Y: %d, Z: %d, Curr: %d, Batt: %d", 
+                                //payload->short_addr, payload->temperature, payload->accel_x, payload->accel_y, payload->accel_z, payload->current_ua, payload->batt_level);
                     
                     // Update address map
                     update_addr_map(payload->short_addr, evt.info.recv_cb.mac_addr);
