@@ -6,7 +6,7 @@
     "IDF_TARGET": "esp32c6",
     "OPENOCD_USB_ADAPTER_LOCATION": "1-1"
   },
-  "idf.portWin": "COM4",
+  "idf.portWin": "COM23",
   "idf.flashType": "JTAG",
   "idf.currentSetup": "C:\\Users\\User\\esp\\v5.4.2\\esp-idf",
   "idf.buildPath": "C:/esp_builds/wsn_coordinator_build",

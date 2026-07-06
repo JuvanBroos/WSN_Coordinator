@@ -4,3 +4,4 @@ dependencies.lock
 sdkconfig.old
 /.github
 /__pycache__/
+logs/
