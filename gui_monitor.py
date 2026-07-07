@@ -166,6 +166,8 @@ class GatewayMonitorApp(ctk.CTk):
         self.nodes = {} # short_addr -> treeview_id
 
         self.setup_csv_logging()
+
+        self.setup_csv_logging()
         self.start_serial_threads()
 
     def setup_csv_logging(self):
