@@ -215,7 +215,7 @@ int16_t LoRaBegin(uint32_t frequencyInHz, int8_t txPowerInDbm, float tcxoVoltage
 	SetPaConfig(0x04, 0x07, 0x00, 0x01); // PA Optimal Settings +22 dBm
 #endif
 	SetPaConfig(0x04, 0x07, 0x00, 0x01); // PA Optimal Settings +22 dBm
-	SetOvercurrentProtection(60.0);  // current max 60mA for the whole device
+	SetOvercurrentProtection(130.0);  // current max 120mA for the whole device
 	SetPowerConfig(txPowerInDbm, SX126X_PA_RAMP_200U); //0 fuer Empfaenger
 	SetRfFrequency(frequencyInHz);
 	return ERR_NONE;

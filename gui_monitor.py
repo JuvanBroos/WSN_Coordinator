@@ -185,19 +185,27 @@ class GatewayMonitorApp(ctk.CTk):
             self.append_log(f"CRITICAL: Failed to setup CSV logging: {e}")
 
     def start_serial_threads(self):
+        opened_ports = {}
         for proto, port in self.ports_config.items():
             if port:
-                try:
-                    conn = serial.Serial(port, self.baudrate, timeout=0.1)
-                    self.serial_conns[proto] = conn
-                    thread = threading.Thread(target=self.read_serial_data, args=(conn, proto), daemon=True)
-                    thread.start()
+                if port not in opened_ports:
+                    try:
+                        conn = serial.Serial(port, self.baudrate, timeout=0.1)
+                        self.serial_conns[proto] = conn
+                        opened_ports[port] = conn
+                        thread = threading.Thread(target=self.read_serial_data, args=(conn, proto), daemon=True)
+                        thread.start()
+                        proto_name = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(proto, "UNK")
+                        self.append_log(f"Opened {port} for {proto_name} at {self.baudrate} bps")
+                    except Exception as e:
+                        self.append_log(f"CRITICAL: Failed to open serial port {port}: {e}")
+                else:
+                    self.serial_conns[proto] = opened_ports[port]
                     proto_name = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(proto, "UNK")
-                    self.append_log(f"Opened {port} for {proto_name} at {self.baudrate} bps")
-                except Exception as e:
-                    self.append_log(f"CRITICAL: Failed to open serial port {port}: {e}")
+                    self.append_log(f"Shared {port} for {proto_name} at {self.baudrate} bps")
 
     def read_serial_data(self, conn, expected_proto):
+        proto_name_str = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(expected_proto, "UNK")
         buffer = bytearray()
         while not self.stop_event.is_set():
             if conn and conn.is_open:
@@ -221,7 +229,7 @@ class GatewayMonitorApp(ctk.CTk):
                                         line_bytes = buffer[:end_idx+1]
                                         line = line_bytes.decode('utf-8', errors='ignore').strip()
                                         if line:
-                                            self.after(0, self.append_log, f"[{expected_proto}] {line}")
+                                            self.after(0, self.append_log, f"[{proto_name_str}] {line}")
                                         buffer = buffer[end_idx+1:]
                                     else:
                                         # No newline yet, wait or shift if buffer too large
@@ -389,9 +397,11 @@ class GatewayMonitorApp(ctk.CTk):
 
     def on_closing(self):
         self.stop_event.set()
+        closed_conns = set()
         for conn in self.serial_conns.values():
-            if conn and conn.is_open:
+            if conn and conn.is_open and conn not in closed_conns:
                 conn.close()
+                closed_conns.add(conn)
         self.destroy()
 
 if __name__ == "__main__":

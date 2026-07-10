@@ -11,7 +11,7 @@ menu "SX126X Configuration"
 
 	choice FREQUENCY
 		prompt "Frequency to use"
-		default "868MHz"
+		default 868MHZ
 		help
 			Select Frequency to use.
 		config 433MHZ

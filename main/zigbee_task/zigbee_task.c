@@ -132,7 +132,7 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     case ATTR_GNSS_SATS:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U8) {
             uint8_t value = *(uint8_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
+            //ESP_LOGI(TAG, "Custom attr %s (0x%04x, U8): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
             if (shadow) shadow->data.gnss_sats = value;
         } else {
             ESP_LOGW(TAG, "Custom attr %s (0x%04x) type mismatch: expected U8, got 0x%x",
@@ -144,8 +144,7 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     case ATTR_LONGITUDE:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S32) {
             int32_t value = *(int32_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, S32): %" PRId32 ", from 0x%04x",
-                     attr_name, attribute->id, value, src_address);
+            //ESP_LOGI(TAG, "Custom attr %s (0x%04x, S32): %" PRId32 ", from 0x%04x", attr_name, attribute->id, value, src_address);
             if (shadow) {
                 if (attribute->id == ATTR_LATITUDE) shadow->data.latitude = value;
                 else shadow->data.longitude = value;
@@ -164,7 +163,7 @@ static void log_custom_cluster_attribute(const esp_zb_zcl_attribute_t *attribute
     case ATTR_ACCEL_Z:
         if (attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
             uint16_t value = *(uint16_t *)attribute->data.value;
-            ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
+            //ESP_LOGI(TAG, "Custom attr %s (0x%04x, U16): %u, from 0x%04x", attr_name, attribute->id, value, src_address);
             if (shadow) {
                 switch(attribute->id) {
                     case ATTR_TEMPERATURE: shadow->data.temperature = value; break;
@@ -655,15 +654,15 @@ static esp_err_t zb_read_attr_resp_handler(const esp_zb_zcl_cmd_read_attr_resp_m
     ESP_RETURN_ON_FALSE(message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS, ESP_ERR_INVALID_ARG, TAG, "Received message: error status(%d)",
                         message->info.status);
 
-    ESP_LOGI(TAG, "Read attribute response: from address(0x%x) src endpoint(%d) to dst endpoint(%d) cluster(0x%x)",
-             message->info.src_address.u.short_addr, message->info.src_endpoint,
-             message->info.dst_endpoint, message->info.cluster);
+    // ESP_LOGI(TAG, "Read attribute response: from address(0x%x) src endpoint(%d) to dst endpoint(%d) cluster(0x%x)",
+    //          message->info.src_address.u.short_addr, message->info.src_endpoint,
+    //          message->info.dst_endpoint, message->info.cluster);
 
     esp_zb_zcl_read_attr_resp_variable_t *variable = message->variables;
     while (variable) {
-        ESP_LOGI(TAG, "Read attribute response: status(%d), cluster(0x%x), attribute(0x%x), type(0x%x)",
-             variable->status, message->info.cluster,
-             variable->attribute.id, variable->attribute.data.type);
+        // ESP_LOGI(TAG, "Read attribute response: status(%d), cluster(0x%x), attribute(0x%x), type(0x%x)",
+        //      variable->status, message->info.cluster,
+        //      variable->attribute.id, variable->attribute.data.type);
         if (variable->status == ESP_ZB_ZCL_STATUS_SUCCESS) {
             esp_app_zb_attribute_handler(message->info.cluster, &variable->attribute, message->info.src_address.u.short_addr);
         }

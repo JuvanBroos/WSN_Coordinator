@@ -3,8 +3,7 @@
     "board/esp32c6-builtin.cfg"
   ],
   "idf.customExtraVars": {
-    "IDF_TARGET": "esp32c6",
-    "OPENOCD_USB_ADAPTER_LOCATION": "1-1"
+    "IDF_TARGET": "esp32c6"
   },
   "idf.portWin": "COM23",
   "idf.flashType": "JTAG",
