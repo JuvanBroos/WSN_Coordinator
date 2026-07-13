@@ -102,6 +102,11 @@ void usb_serial_jtag_task(void *arg)
                     zigbee_send_debug_config(cmd);
                     break;
 
+                case CHANGE_SLEEP_INTERVAL:
+                    ESP_LOGI(TAG, "ZIGBEE: CHANGE_SLEEP_INTERVAL received. Dest: 0x%04x", cmd.dest_short_addr);
+                    zigbee_send_debug_config(cmd);
+                    break;
+
                 case READ_ATTRIBUTE:
                     ESP_LOGI(TAG, "ZIGBEE: READ_ATTRIBUTE 0x%04x to 0x%04x", cmd.command_value_3.read_attribute_id, cmd.dest_short_addr);
                     zigbee_read_attributes(cmd);

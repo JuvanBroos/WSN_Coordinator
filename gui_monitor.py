@@ -351,18 +351,6 @@ class GatewayMonitorApp(ctk.CTk):
             
             target_proto_enum = {"WiFi/ESP-NOW": PROTO_WIFI, "Zigbee": PROTO_ZIGBEE, "LoRa": PROTO_LORA}.get(proto_str, PROTO_WIFI)
             
-            command_value_3 = 0
-            if cmd_type == 0x02: # CHANGE_PROTOCOL
-                command_value_3 = target_proto_enum
-            elif cmd_type == 0x03: # CHANGE_SLEEP_INTERVAL
-                sleep_str = self.sleep_entry.get().strip()
-                if not sleep_str:
-                    self.append_log("ERROR: Sleep Interval required.")
-                    return
-                command_value_3 = int(sleep_str)
-            elif cmd_type == 0x01: # READ_ATTRIBUTE
-                command_value_3 = 0 # Default attribute ID 0 (All)
-
             # Determine route protocol from table (default to PROTO_WIFI if not found)
             route_proto = PROTO_WIFI
             for child in self.tree.get_children():
@@ -371,6 +359,26 @@ class GatewayMonitorApp(ctk.CTk):
                     if p_str == "Zigbee": route_proto = PROTO_ZIGBEE
                     elif p_str == "LoRa": route_proto = PROTO_LORA
                     break
+            
+            command_value_1_min = 0
+            command_value_2_max = 0
+            command_value_3 = 0
+            if cmd_type == 0x02: # CHANGE_PROTOCOL
+                command_value_3 = target_proto_enum
+            elif cmd_type == 0x03: # CHANGE_SLEEP_INTERVAL
+                sleep_str = self.sleep_entry.get().strip()
+                if not sleep_str:
+                    self.append_log("ERROR: Sleep Interval required.")
+                    return
+                sleep_val = int(sleep_str)
+                if route_proto == PROTO_ZIGBEE:
+                    command_value_1_min = 0
+                    command_value_2_max = sleep_val
+                    command_value_3 = 1000 # Delta
+                else:
+                    command_value_3 = sleep_val
+            elif cmd_type == 0x01: # READ_ATTRIBUTE
+                command_value_3 = 0 # Default attribute ID 0 (All)
             
             if route_proto not in self.serial_conns or not self.serial_conns[route_proto].is_open:
                 proto_name = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(route_proto, "UNK")
@@ -382,7 +390,8 @@ class GatewayMonitorApp(ctk.CTk):
                 route_proto,
                 cmd_type,
                 target_addr,
-                0, 0, # command_value_1_min, command_value_2_max
+                command_value_1_min,
+                command_value_2_max,
                 command_value_3
             )
             
