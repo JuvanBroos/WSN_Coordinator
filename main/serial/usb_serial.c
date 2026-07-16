@@ -11,6 +11,7 @@
 #include "lora_gw_state_mgr.h"
 #include "usb_serial.h"
 #include "protocol.h"
+#include "sd_logger.h"
 
 static const char *TAG = "USB_SERIAL";
 static QueueHandle_t serial_report_queue = NULL;
@@ -22,6 +23,7 @@ void gateway_send_report(serial_report_t *report)
             ESP_LOGW(TAG, "Serial report queue full. Dropping report.");
         }
     }
+    sd_logger_queue_report(report);
 }
 
 void serial_report_task(void *arg)

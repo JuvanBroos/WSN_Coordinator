@@ -93,18 +93,8 @@ void LoRaInit(void)
 		gpio_set_direction(SX126x_RXEN, GPIO_MODE_OUTPUT);
 	}
 
-	spi_bus_config_t spi_bus_config = {
-		.sclk_io_num = CONFIG_SCLK_GPIO,
-		.mosi_io_num = CONFIG_MOSI_GPIO,
-		.miso_io_num = CONFIG_MISO_GPIO,
-		.quadwp_io_num = -1,
-		.quadhd_io_num = -1
-	};
-
+	// spi_bus_initialize moved to app_main.c to share bus with SD card
 	esp_err_t ret;
-	ret = spi_bus_initialize( HOST_ID, &spi_bus_config, SPI_DMA_CH_AUTO );
-	ESP_LOGI(TAG, "spi_bus_initialize=%d",ret);
-	assert(ret==ESP_OK);
 
 	spi_device_interface_config_t devcfg = {
 		.clock_speed_hz = 9000000,
