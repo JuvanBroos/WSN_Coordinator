@@ -10,6 +10,8 @@
 #include "driver/spi_master.h"
 #include "sd_logger.h"
 #include "driver/gpio.h"
+#include "esp_coexist.h"
+#include "esp_coex_i154.h"
 
 #if CONFIG_SPI2_HOST
 #define HOST_ID SPI2_HOST
@@ -17,6 +19,7 @@
 #define HOST_ID SPI3_HOST
 #endif
 //#define ZIGBEE_COORDINATOR
+//#define COEXISTENCE_TEST
 
 void app_main(void)
 {
@@ -59,6 +62,21 @@ void app_main(void)
     } else {
         ESP_LOGE("APP_MAIN", "Failed to initialize SPI bus");
     }
+
+    /*Start the Wifi and LoRa tasks first then the Zigbee task */
+    #ifdef COEXISTENCE_TEST
+    // esp_coex_prefer_t coex_pref = ESP_COEX_PREFER_WIFI;
+    // esp_coex_preference_set(coex_pref);
+    esp_coex_wifi_i154_enable();
+
+    xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
+
+    wifi_init();
+    espnow_init();
+    start_lora_task(NULL);
+    
+    #else
+
     #ifdef ZIGBEE_COORDINATOR
     /* Start the Zigbee network */
     ESP_LOGI("APP_MAIN", "Starting Zigbee task...");
@@ -70,6 +88,7 @@ void app_main(void)
 
     /* Start the LoRa network */
     start_lora_task(NULL);
+    #endif
     #endif
 
     /* Start the USB Serial JTAG task */
