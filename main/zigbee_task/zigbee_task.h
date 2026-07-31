@@ -24,6 +24,7 @@ void esp_zb_task(void *pvParameters);
 //void zigbee_send_test_config(serial_command_t cmd);
 void zigbee_send_debug_config(serial_command_t cmd);
 void zigbee_change_protocol(serial_command_t cmd);
+void zigbee_change_sleep_interval(serial_command_t cmd);
 void zigbee_start_gnss(serial_command_t cmd);
 
 

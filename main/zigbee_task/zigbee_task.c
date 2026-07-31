@@ -324,6 +324,29 @@ void zigbee_send_debug_config(serial_command_t cmd){
     ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
 }
 
+void zigbee_change_sleep_interval(serial_command_t cmd){
+    esp_zb_zcl_write_attr_cmd_t write_cmd = {0};
+    write_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
+    write_cmd.zcl_basic_cmd.src_endpoint = HA_THERMOSTAT_ENDPOINT;
+    write_cmd.zcl_basic_cmd.dst_endpoint = temp_sensor.endpoint;
+    write_cmd.zcl_basic_cmd.dst_addr_u.addr_short = cmd.dest_short_addr;
+    write_cmd.clusterID = CUSTOM_CLUSTER_ID;
+    esp_zb_zcl_attribute_t attributes[] = {
+        {
+            .id = ATTR_SLEEP_INTERVAL,
+            .data.type = ESP_ZB_ZCL_ATTR_TYPE_U16,
+            .data.value = &cmd.command_value_2_max
+        },
+    };
+    write_cmd.attr_number = ARRAY_LENGTH(attributes);
+    write_cmd.attr_field = attributes;
+
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_zb_zcl_write_attr_cmd_req(&write_cmd);
+    esp_zb_lock_release();
+    ESP_EARLY_LOGI(TAG, "Send 'write attributes' command to change sleep interval");
+}
+
 void zigbee_change_protocol(serial_command_t cmd){
     esp_zb_zcl_write_attr_cmd_t write_cmd = {0};
     write_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;

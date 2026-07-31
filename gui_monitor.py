@@ -376,7 +376,7 @@ class GatewayMonitorApp(ctk.CTk):
                 if route_proto == PROTO_ZIGBEE:
                     command_value_1_min = 0
                     command_value_2_max = sleep_val
-                    command_value_3 = 1000 # Delta
+                    command_value_3 = 1000 # Make this 1 to use the zigbee counter for rapid reporting
                 else:
                     command_value_3 = sleep_val
             elif cmd_type == 0x01: # READ_ATTRIBUTE
