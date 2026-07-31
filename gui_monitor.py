@@ -44,7 +44,7 @@ REPORT_SIZE = struct.calcsize(REPORT_STRUCT_FMT)
 # B  : gnss_sats (uint8)
 # i  : latitude (int32)
 # i  : longitude (int32)
-# H  : current_ua (uint16)
+# H  : tx_count (uint16)
 # H  : accel_x (uint16)
 # H  : accel_y (uint16)
 # H  : accel_z (uint16)
@@ -91,12 +91,13 @@ class GatewayMonitorApp(ctk.CTk):
         style.map("Treeview", background=[('selected', '#347083')])
 
         self.tree = ttk.Treeview(self.table_frame, columns=(
-            "ID", "Proto", "RSSI", "Batt", "Temp", "GNSS", "Lat", "Lon", "Accel X/Y/Z", "Last Seen"
+            "ID", "Proto", "RSSI", "Tx Count", "Batt", "Temp", "GNSS", "Lat", "Lon", "Accel X/Y/Z", "Last Seen"
         ), show="headings")
         
         self.tree.heading("ID", text="Node ID")
         self.tree.heading("Proto", text="Protocol")
         self.tree.heading("RSSI", text="RSSI")
+        self.tree.heading("Tx Count", text="Tx Count")
         self.tree.heading("Batt", text="Batt (mV)")
         self.tree.heading("Temp", text="Temp (°C)")
         self.tree.heading("GNSS", text="Sats")
@@ -179,7 +180,7 @@ class GatewayMonitorApp(ctk.CTk):
         try:
             with open(self.csv_filepath, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Timestamp", "Node ID", "Protocol", "RSSI", "Batt (mV)", "Temp (C)", "GNSS Sats", "Latitude", "Longitude", "Accel X/Y/Z"])
+                writer.writerow(["Timestamp", "Node ID", "Protocol", "RSSI", "Tx Count", "Batt (mV)", "Temp (C)", "GNSS Sats", "Latitude", "Longitude", "Accel X/Y/Z"])
             self.append_log(f"Started CSV logging to {self.csv_filepath}")
         except Exception as e:
             self.append_log(f"CRITICAL: Failed to setup CSV logging: {e}")
@@ -277,13 +278,14 @@ class GatewayMonitorApp(ctk.CTk):
             ieee_raw, _, _, batt, temp, sats, lat, lon, curr, ax, ay, az = struct.unpack(UPLINK_PAYLOAD_FMT, payload_raw[:UPLINK_PAYLOAD_SIZE])
             
             now = datetime.now()
-            time_str = now.strftime('%H:%M:%S')
-            full_timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
+            time_str = now.strftime('%H:%M:%S.%f')[:-3]
+            full_timestamp = now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
             
             data = {
                 "ID": f"0x{src_addr:04X}",
                 "Proto": proto_str,
                 "RSSI": f"{rssi} dBm",
+                "Tx Count": f"{curr}",
                 "Batt": f"{batt}",
                 "Temp": f"{temp/10.0-273.15:.2f}",
                 "GNSS": f"{sats}",
@@ -299,7 +301,7 @@ class GatewayMonitorApp(ctk.CTk):
                     with open(self.csv_filepath, 'a', newline='') as f:
                         writer = csv.writer(f)
                         writer.writerow([
-                            full_timestamp, data["ID"], data["Proto"], data["RSSI"], 
+                            full_timestamp, data["ID"], data["Proto"], data["RSSI"], data["Tx Count"],
                             data["Batt"], data["Temp"], data["GNSS"], 
                             data["Lat"], data["Lon"], data["Accel X/Y/Z"]
                         ])
@@ -322,7 +324,7 @@ class GatewayMonitorApp(ctk.CTk):
 
     def append_log(self, text):
         self.log_textbox.configure(state="normal")
-        self.log_textbox.insert("end", f"[{time.strftime('%H:%M:%S')}] {text}\n")
+        self.log_textbox.insert("end", f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {text}\n")
         self.log_textbox.see("end")
         self.log_textbox.configure(state="disabled")
 
@@ -398,6 +400,7 @@ class GatewayMonitorApp(ctk.CTk):
             self.serial_conns[route_proto].write(frame)
             proto_name = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(route_proto, "UNK")
             self.append_log(f"Sent command '{cmd_type_str}' to 0x{target_addr:04X} routed via {proto_name}")
+            self.append_log(f"Command values: {command_value_1_min}, {command_value_2_max}, {command_value_3}")
 
         except ValueError as ve:
              self.append_log(f"ERROR: Invalid number format. {ve}")

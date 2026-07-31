@@ -140,6 +140,8 @@ void wifi_init(void)
 
 #if CONFIG_ESPNOW_ENABLE_LONG_RANGE
     ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_LR) );
+    //ESP_ERROR_CHECK( esp_wifi_set_protocol(ESPNOW_WIFI_IF, WIFI_PROTOCOL_LR) );
+    //ESP_ERROR_CHECK(esp_wifi_config_espnow_rate(ESPNOW_WIFI_IF, WIFI_PHY_RATE_LORA_500K));
 #endif
 }
 
