@@ -16,11 +16,13 @@
 static const char *TAG = "USB_SERIAL";
 static QueueHandle_t serial_report_queue = NULL;
 
+uint32_t g_dropped_serial_reports = 0;
+
 void gateway_send_report(serial_report_t *report)
 {
     if (serial_report_queue != NULL) {
         if (xQueueSend(serial_report_queue, report, pdMS_TO_TICKS(10)) != pdTRUE) {
-            ESP_LOGW(TAG, "Serial report queue full. Dropping report.");
+            g_dropped_serial_reports++;
         }
     }
     sd_logger_queue_report(report);

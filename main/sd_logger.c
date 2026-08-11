@@ -145,12 +145,14 @@ bool sd_logger_init(int host_id)
     return true;
 }
 
+uint32_t g_dropped_sd_logs = 0;
+
 void sd_logger_queue_report(serial_report_t *report)
 {
     if (sd_log_queue != NULL) {
         // Enqueue but don't block for long if full (to prevent blocking callers)
         if (xQueueSend(sd_log_queue, report, pdMS_TO_TICKS(10)) != pdTRUE) {
-            ESP_LOGW(TAG, "SD log queue full. Dropping report.");
+            g_dropped_sd_logs++;
         }
     }
 }

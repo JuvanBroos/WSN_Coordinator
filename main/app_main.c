@@ -12,6 +12,34 @@
 #include "driver/gpio.h"
 #include "esp_coexist.h"
 #include "esp_coex_i154.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+extern uint32_t g_dropped_serial_reports;
+extern uint32_t g_dropped_sd_logs;
+
+static void diagnostics_task(void *arg)
+{
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        
+        ESP_LOGI("DIAG", "--- Diagnostics Report ---");
+        ESP_LOGI("DIAG", "Min Free Heap: %lu bytes", esp_get_minimum_free_heap_size());
+        ESP_LOGI("DIAG", "Dropped Serial Packets: %lu", g_dropped_serial_reports);
+        ESP_LOGI("DIAG", "Dropped SD Logs: %lu", g_dropped_sd_logs);
+
+        // Run Time Stats (Requires CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS)
+#ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+        char *stats_buffer = malloc(1024);
+        if (stats_buffer) {
+            vTaskGetRunTimeStats(stats_buffer);
+            ESP_LOGI("DIAG", "Task Run Time Stats:\n%s", stats_buffer);
+            free(stats_buffer);
+        }
+#endif
+        ESP_LOGI("DIAG", "--------------------------");
+    }
+}
 
 #if CONFIG_SPI2_HOST
 #define HOST_ID SPI2_HOST
@@ -97,4 +125,6 @@ void app_main(void)
     /* Start the Serial Reporting task */
     xTaskCreate(serial_report_task, "Serial_Report", 4096, NULL, 5, NULL);
 
+    /* Start the Diagnostics task */
+    xTaskCreate(diagnostics_task, "Diagnostics", 4096, NULL, 2, NULL);
 }
