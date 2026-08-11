@@ -49,6 +49,8 @@ static void diagnostics_task(void *arg)
 //#define ZIGBEE_COORDINATOR
 //#define COEXISTENCE_TEST
 
+//#define RUNTIME_TEST
+
 void app_main(void)
 {
     /* Initialize NVS */
@@ -124,7 +126,9 @@ void app_main(void)
 
     /* Start the Serial Reporting task */
     xTaskCreate(serial_report_task, "Serial_Report", 4096, NULL, 5, NULL);
-
+    
+    #ifdef RUNTIME_TEST
     /* Start the Diagnostics task */
     xTaskCreate(diagnostics_task, "Diagnostics", 4096, NULL, 2, NULL);
+    #endif
 }
