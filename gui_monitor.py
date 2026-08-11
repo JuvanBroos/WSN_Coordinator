@@ -286,12 +286,12 @@ class GatewayMonitorApp(ctk.CTk):
                 "Proto": proto_str,
                 "RSSI": f"{rssi} dBm",
                 "Tx Count": f"{curr}",
-                "Batt": f"{batt}",
+                "Batt": f"{batt*2}",
                 "Temp": f"{temp/10.0-273.15:.2f}",
                 "GNSS": f"{sats}",
                 "Lat": f"{lat/1000000.0:.6f}",
                 "Lon": f"{lon/1000000.0:.6f}",
-                "Accel X/Y/Z": f"{ax}/{ay}/{az}",
+                "Accel X/Y/Z": f"{(ax-1650)/330:.2f}/{(ay-1650)/330:.2f}/{(az-1650)/330:.2f}",
                 "Last Seen": time_str
             }
             
