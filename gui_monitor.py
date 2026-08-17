@@ -173,17 +173,22 @@ class GatewayMonitorApp(ctk.CTk):
 
     def setup_csv_logging(self):
         os.makedirs("logs", exist_ok=True)
-        filename = datetime.now().strftime("%Y%m%d_%H%M%S.csv")
-        self.csv_filepath = os.path.join("logs", filename)
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.csv_filepath = os.path.join("logs", f"{timestamp_str}.csv")
+        self.txt_filepath = os.path.join("logs", f"diagnostics_{timestamp_str}.txt")
         self.csv_lock = threading.Lock()
+        self.txt_lock = threading.Lock()
         
         try:
             with open(self.csv_filepath, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(["Timestamp", "Node ID", "Protocol", "RSSI", "Tx Count", "Batt (mV)", "Temp (C)", "GNSS Sats", "Latitude", "Longitude", "Accel X/Y/Z"])
+            with open(self.txt_filepath, 'w') as f:
+                f.write(f"--- Log Started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
             self.append_log(f"Started CSV logging to {self.csv_filepath}")
+            self.append_log(f"Started TXT logging to {self.txt_filepath}")
         except Exception as e:
-            self.append_log(f"CRITICAL: Failed to setup CSV logging: {e}")
+            self.append_log(f"CRITICAL: Failed to setup logging: {e}")
 
     def start_serial_threads(self):
         opened_ports = {}
@@ -208,6 +213,7 @@ class GatewayMonitorApp(ctk.CTk):
     def read_serial_data(self, conn, expected_proto):
         proto_name_str = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(expected_proto, "UNK")
         buffer = bytearray()
+        in_diag_block = False
         while not self.stop_event.is_set():
             if conn and conn.is_open:
                 try:
@@ -230,7 +236,17 @@ class GatewayMonitorApp(ctk.CTk):
                                         line_bytes = buffer[:end_idx+1]
                                         line = line_bytes.decode('utf-8', errors='ignore').strip()
                                         if line:
-                                            self.after(0, self.append_log, f"[{proto_name_str}] {line}")
+                                            log_msg = f"[{proto_name_str}] {line}"
+                                            self.after(0, self.append_log, log_msg)
+                                            
+                                            if "--- Diagnostics Report ---" in line:
+                                                in_diag_block = True
+                                                
+                                            if "DIAG" in line or in_diag_block:
+                                                self.append_txt_log(log_msg)
+                                                
+                                            if "--------------------------" in line:
+                                                in_diag_block = False
                                         buffer = buffer[end_idx+1:]
                                     else:
                                         # No newline yet, wait or shift if buffer too large
@@ -328,6 +344,15 @@ class GatewayMonitorApp(ctk.CTk):
         self.log_textbox.see("end")
         self.log_textbox.configure(state="disabled")
 
+    def append_txt_log(self, text):
+        if hasattr(self, 'txt_filepath') and hasattr(self, 'txt_lock'):
+            with self.txt_lock:
+                try:
+                    with open(self.txt_filepath, 'a') as f:
+                        f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}] {text}\n")
+                except Exception as e:
+                    print(f"TXT write error: {e}")
+
     def send_command(self):
         try:
             target_addr_str = self.target_addr_entry.get().strip()
@@ -376,7 +401,7 @@ class GatewayMonitorApp(ctk.CTk):
                 if route_proto == PROTO_ZIGBEE:
                     command_value_1_min = 0
                     command_value_2_max = sleep_val
-                    command_value_3 = 1000 # Make this 1 to use the zigbee counter for rapid reporting
+                    command_value_3 = 1 # Make this 1 to use the zigbee counter for rapid reporting
                 else:
                     command_value_3 = sleep_val
             elif cmd_type == 0x01: # READ_ATTRIBUTE
@@ -399,8 +424,12 @@ class GatewayMonitorApp(ctk.CTk):
             
             self.serial_conns[route_proto].write(frame)
             proto_name = {PROTO_WIFI: "WiFi/ESP-NOW", PROTO_ZIGBEE: "Zigbee", PROTO_LORA: "LoRa"}.get(route_proto, "UNK")
-            self.append_log(f"Sent command '{cmd_type_str}' to 0x{target_addr:04X} routed via {proto_name}")
-            self.append_log(f"Command values: {command_value_1_min}, {command_value_2_max}, {command_value_3}")
+            msg1 = f"Sent command '{cmd_type_str}' to 0x{target_addr:04X} routed via {proto_name}"
+            msg2 = f"Command values: {command_value_1_min}, {command_value_2_max}, {command_value_3}"
+            self.append_log(msg1)
+            self.append_log(msg2)
+            self.append_txt_log(msg1)
+            self.append_txt_log(msg2)
 
         except ValueError as ve:
              self.append_log(f"ERROR: Invalid number format. {ve}")
