@@ -14,6 +14,7 @@
 #include "esp_coex_i154.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "led/led.h"
 
 extern uint32_t g_dropped_serial_reports;
 extern uint32_t g_dropped_sd_logs;
@@ -60,6 +61,8 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    led_init();
 
     /* Pre-emptively set both CS pins HIGH to prevent bus contention during initialization */
     gpio_set_direction(CONFIG_NSS_GPIO, GPIO_MODE_OUTPUT);

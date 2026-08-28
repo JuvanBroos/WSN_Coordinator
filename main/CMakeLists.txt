@@ -7,5 +7,6 @@ idf_component_register(
     "serial/usb_serial.c"
     "espnow/espnow.c"
     "sd_logger.c"
-    INCLUDE_DIRS "." "lora" "zigbee_task" "serial" "espnow"
+    "led/led.c"
+    INCLUDE_DIRS "." "lora" "zigbee_task" "serial" "espnow" "led"
 )
