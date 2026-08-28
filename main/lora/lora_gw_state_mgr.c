@@ -8,6 +8,7 @@
 #include "string.h"
 #include "esp_random.h"
 #include "serial/usb_serial.h"
+#include "led/led.h"
 
 static const char *TAG = "LORA_TASK";
 static QueueHandle_t isr_queue = NULL;
@@ -76,6 +77,7 @@ static void report_data(uplink_payload_t *ul_payload) {
     report.length = sizeof(uplink_payload_t);
     memcpy(report.payload, ul_payload, sizeof(uplink_payload_t));
     gateway_send_report(&report);
+    toggle_led();
 }
 
 static void setup_waiting_ack_node(serial_command_t *cmd) {

@@ -47,7 +47,7 @@ static void diagnostics_task(void *arg)
 #elif CONFIG_SPI3_HOST
 #define HOST_ID SPI3_HOST
 #endif
-//#define ZIGBEE_COORDINATOR
+#define ZIGBEE_COORDINATOR
 //#define COEXISTENCE_TEST
 
 //#define RUNTIME_TEST

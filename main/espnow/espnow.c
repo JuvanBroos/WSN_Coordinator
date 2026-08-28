@@ -17,6 +17,7 @@
 #include "esp_crc.h"
 #include "protocol.h"
 //#include "aggregator.h"
+#include "led/led.h"
 
 #define ESPNOW_MAXDELAY 512
 
@@ -408,6 +409,7 @@ void espnow_task(void *pvParameter)
                     report.length = sizeof(uplink_payload_t);
                     memcpy(report.payload, payload, sizeof(uplink_payload_t));
                     gateway_send_report(&report);
+                    toggle_led();
                 } else {
                     ESP_LOGW(TAG, "Received ESP-NOW packet of unknown payload length: %d", payload_len);
                 }

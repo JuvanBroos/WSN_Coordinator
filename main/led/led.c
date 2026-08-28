@@ -55,3 +55,13 @@ esp_err_t led_off(void) {
 esp_err_t led_on(void) {
     return led_flash(LEDC_FREQUENCY, LEDC_MAX_DUTY); // Set duty to LEDC_DUTY to turn on the LED at the configured brightness
 }
+
+esp_err_t toggle_led(void) {
+    uint32_t current_duty;
+    current_duty = ledc_get_duty(LEDC_MODE, LEDC_CHANNEL);
+    if (current_duty == LEDC_MIN_DUTY) {
+        return led_on();
+    } else {
+        return led_off();
+    }
+}

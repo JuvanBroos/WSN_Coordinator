@@ -11,6 +11,8 @@
 #include "usb_serial.h" 
 #include "esp_ieee802154.h"
 #include "hal/ieee802154_ll.h"
+#include "led/led.h"
+
 #define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
 
 #define CUSTOM_CLUSTER_ID 0xFF01
@@ -115,6 +117,7 @@ static void send_zigbee_report(uint16_t src_address) {
         report.length = sizeof(uplink_payload_t);
         memcpy(report.payload, &shadow->data, sizeof(uplink_payload_t));
         gateway_send_report(&report);
+        toggle_led();
     }
 }
 

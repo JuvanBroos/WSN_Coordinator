@@ -18,4 +18,5 @@ void led_init(void);
 esp_err_t led_flash(uint32_t frequency_hz, uint32_t duty);
 esp_err_t led_off(void);
 esp_err_t led_on(void);
+esp_err_t toggle_led(void);
 
