@@ -1,128 +1,217 @@
-# Wireless Sensor Network (WSN) Coordinator
+# WSN Coordinator
 
-This repository implements a robust Zigbee Coordinator for a Wireless Sensor Network (WSN) running on an ESP32-C6. Acting as the central gateway, it discovers, pairs, and receives telemetry data from remote sensor nodes using a custom Zigbee cluster (0xFF01).
+ESP-IDF firmware for an ESP32-C6 gateway that receives telemetry from wireless sensor nodes and forwards normalized reports to a host computer. The repository contains implementations for Zigbee, ESP-NOW, and LoRa/SX1262, plus USB Serial/JTAG reporting, optional SPI SD-card CSV logging, and a Python monitoring dashboard.
 
-## System Overview
+> **Current runtime configuration:** the checked-in `app_main.c` defines `ZIGBEE_COORDINATOR`, so a normal build starts the Zigbee task, USB Serial/JTAG tasks, and SD-card initialization. The ESP-NOW and LoRa implementations are present in the tree, but are not started by the default application path unless the startup configuration is changed.
 
-Unlike standard Home Automation examples, this project is customized to continuously listen for structured telemetry updates from End Devices. These custom attributes map real-world embedded sensor data:
-- **Location Data**: GNSS Satellite count, Latitude, Longitude.
-- **Power Analytics**: Instantaneous Current (µA), Battery Voltage.
-- **Inertial Data**: X, Y, Z axis readings from an accelerometer.
-- **System Metrics**: Sleep intervals and active Protocol sets.
+## Repository layout
 
-## Hardware Required
-
-* 1x **ESP32-C6** Development Board (Target configured as the Coordinator Gateway).
-* At least 1x Zigbee End Device running compatible firmware (broadcasting custom cluster attributes).
-* USB connection to a host PC for monitoring and log parsing.
-
-## Setup & Configuration
-
-This project is built using ESP-IDF v5.0+ and relies on the Espressif ZBOSS and Zigbee SDK libraries (`~1.6.0`).
-
-1. Set the correct target architecture for ESP32-C6:
-   ```bash
-   idf.py set-target esp32c6
-   ```
-
-2. Clean non-volatile storage (NVRAM) state. It is highly recommended to erase the flash to ensure there's no legacy networking data interfering with the formation of the new Zigbee network:
-   ```bash
-   idf.py -p PORT erase-flash
-   ```
-
-3. Build and flash the firmware:
-   ```bash
-   idf.py -p PORT build flash
-   ```
-
-## Application Flow & Data Acquisition
-
-Upon boot, the Coordinator initializes the Zigbee stack, operates as a Trust Center, and forms an open PAN network. When remote end devices successfully associate and bind to the Coordinator, they begin reporting scheduled telemetry data.
-
-The application logic intercepts these responses safely within the `esp_zb_task` thread. Attributes matching the `CUSTOM_CLUSTER_ID` (0xFF01) are explicitly parsed against defined IDs (`ATTR_GNSS_SATS`, `ATTR_LATITUDE`, `ATTR_CURRENT_UA`, etc.). The data payload is unpackaged based on its native Zigbee data type (e.g. `U8`, `U16`, `S16`, `S32`) and logged safely via serial.
-
-## Multi-Protocol Support
-
-The Gateway acts as a central hub for multiple wireless protocols, standardizing incoming data into a unified binary format for the host PC.
-
-### 1. Zigbee Coordinator
-The gateway forms a Zigbee network and listens for telemetry updates from remote sensor nodes using a custom Zigbee cluster (**0xFF01**). It maintains a "Shadow Table" of active nodes, aggregating individual attribute updates into complete state reports.
-
-### 2. ESP-NOW Coordinator
-The gateway also acts as an **Active ESP-NOW Coordinator**:
-- **Discovery Responder**: Automatically replies to node discovery broadcasts with a unicast Discovery ACK.
-- **Address Mapping**: Dynamically maps 16-bit virtual IDs (derived from MAC addresses) to full 48-bit hardware MACs, allowing the host PC to target ESP-NOW nodes using consistent 16-bit addressing.
-- **Active Monitoring**: Receives unicast telemetry bursts and instantly routes them to the reporting system.
-
-### 3. LoRa Gateway
-The gateway incorporates an interrupt-driven `lora_manager` to safely handle LoRa traffic:
-- **Continuous RX**: Listens passively for incoming LoRa frames without blocking other network tasks.
-- **Hardware Interrupts**: Uses a FreeRTOS Queue attached to the SX1262's `DIO1` pin for instant reaction to `RX_DONE` events.
-- **Thread-Safe SPI**: A dedicated FreeRTOS Mutex (`s_lora_spi_mutex`) wraps all driver access. This allows other gateway tasks (like USB Serial) to dispatch asynchronous downlink commands directly to the radio without corrupting the active continuous-receive state machine.
-- **Stop-and-Wait ARQ Integration**: Intercepts valid data uplinks and rapidly fires dedicated Acknowledgment (ACK) payloads synchronously to ensure remote nodes can sleep efficiently.
-- **Asynchronous Polling (READ_REQ)**: Supports actively requesting live telemetry updates from remote sleeping nodes. Downstream thread waits efficiently on a semaphore until the targeted node replies with telemetry, utilizing the incoming data packet as an implicit ACK to unblock the sending thread.
-- **Downlink Retries & Broadcasts**: Configuration commands dispatched to End Nodes automatically block via semaphore to await an ACK, retrying up to 3 times if no confirmation is received. Global network broadcasts (`0xFFFF`) are fully supported and dispatched independently of the ACK dependency chain to prevent collision storms.
-
-## Technical Implementation Details
-
-### 1. High-Performance Timing & Latency
-To ensure the Gateway can catch high-speed ACKs from End Nodes (which often reply within microseconds of a downlink), several low-level optimizations are implemented:
-- **RTOS Tick Rate**: The project configuration (`configTICK_RATE_HZ`) is set to **1000 Hz**. This reduces the minimum `vTaskDelay` and scheduling quantum to 1ms, preventing long 10ms "deaf periods" common in default ESP-IDF setups.
-- **Driver Polling**: The `ra01s.c` driver utilizes `delayMicroseconds()` rather than millisecond-level busy waits for radio state transitions. This allows the software to beat the physical arrival of the ACK preamble.
-
-### 2. LoRa State Manager & Deferral Logic
-The Gateway uses a specialized command queuing system in `lora_gw_state_mgr.c`:
-- **Active ACK Tracking**: When a downlink command is sent, the Gateway sets `waiting_for_ack_node.is_active = true` and starts a one-shot `ack_timeout_timer`.
-- **Event Deferral**: If a new serial command arrives while the Gateway is already waiting for an ACK, it is placed into `s_deferred_event`. A `deferral_timer` then reintroduces the command to the main processing loop once the previous transaction completes or times out.
-
-### 3. Thread Safety & Concurrency
-A dedicated FreeRTOS Mutex (`s_lora_spi_mutex`) protects all SPI transactions to the SX1262. This prevents the continuous background RX task and the asynchronous serial command dispatchers from causing bus contention or register corruption during overlapping SPI transactions.
-
-### 4. Serial Reporting Architecture
-All telemetry reports follow a strict framing protocol defined in `usb_serial.c` and `protocol.h`:
-- **Sync Bytes**: Every frame begins with `SERIAL_SYNC_1` (**0xAA**) and `SERIAL_SYNC_2` (**0x55**).
-- **Framing**: Reports use `serial_header_t` to declare the payload size, followed by the standardized `serial_report_t` body, and ending with a checksum for data integrity validation at the host PC.
-
-## Unified Serial Reporting System
-
-To ensure reliable data delivery to the host PC, the gateway utilizes a **Dedicated Reporting Task**. All incoming data (regardless of protocol) is packed into a standardized binary frame before transmission over the USB Serial JTAG interface.
-
-### Binary Frame Format (`serial_report_t`)
-| Offset | Field | Type | Description |
-| :--- | :--- | :--- | :--- |
-| 0 | Sync1 | uint8 | Always `0xAA` |
-| 1 | Sync2 | uint8 | Always `0x55` |
-| 2 | Length | uint8 | Payload length |
-| 3 | Protocol | uint8 | 0=ESP-NOW, 1=Zigbee, 2=LoRa |
-| 4 | Type | uint8 | 1=Sensor Data, 2=Status, 3=Log |
-| 5 | Src Addr | uint16 | 16-bit Source identifier |
-| 7 | RSSI | int8 | Signal strength in dBm |
-| 8 | Timestamp| uint32 | Gateway uptime in ms |
-| 12 | Payload | uint8[64]| Protocol-specific data |
-| 76 | Checksum | uint16 | Simple sum of all preceding bytes |
-
-## Serial Command System
-
-The gateway accepts structured binary commands from the host PC to control remote nodes. Commands are protocol-aware and routed based on the `protocol` field.
-
-### Command Structure (`serial_command_t`)
-Commands follow the `0xAA 0x55` framing and include a protocol selector (`0` for ESP-NOW, `1` for Zigbee, `2` for LoRa) to ensure the gateway uses the correct radio and addressing scheme. Supported commands include:
-- `CHANGE_PROTOCOL (0x02)`: Instructs the target node to gracefully switch to a new wireless protocol.
-- `CHANGE_SLEEP_INTERVAL (0x03)`: Instructs the target node to update its transmission delay dynamically without rebooting.
-- `READ_ATTRIBUTE (0x00)`: Prompts the target node to immediately fetch its active state and report it back (Polling).
-
-## Python Dashboard (`gui_monitor.py`)
-
-The project includes a high-performance **Multi-Protocol Gateway Dashboard** built with `customtkinter`. It provides a real-time visualization of the entire sensor network.
-
-### Features
-- **Split-Screen Layout**: Top panel shows a live **Sensor Data Table**; bottom panel shows a **Live Log Stream**; the right panel features a **Command Execution Form**.
-- **Remote Commands**: Easily dispatch configuration changes (like Sleep Interval or Active Protocol) to specific nodes by entering their Hex ID in the right-hand panel. The GUI packs this into a binary `serial_command_t` and routes it via the gateway.
-- **Dynamic Node Discovery**: Automatically adds rows as new nodes (Zigbee, LoRa, or ESP-NOW) check in.
-- **High Fidelity**: Decodes binary `serial_report_t` frames for precise data rendering.
-
-**Usage:**
-```bash
-python gui_monitor.py -p <SERIAL_PORT> -b 115200
+```text
+.
+├── main/
+│   ├── app_main.c                 Startup, SPI bus, tasks, and diagnostics
+│   ├── protocol.h                 Shared payload, report, and protocol definitions
+│   ├── zigbee_task/               Zigbee coordinator and custom-cluster handling
+│   ├── espnow/                    ESP-NOW receive, discovery, address mapping, and commands
+│   ├── lora/                      SX1262 interrupt handling and LoRa gateway state machine
+│   ├── serial/                    USB Serial/JTAG command input and report output
+│   ├── sd_logger.c                Optional SPI SD-card CSV logger
+│   └── led/                       Activity LED support
+├── components/ra01s/              SX126x SPI driver and Kconfig options
+├── gui_monitor.py                 CustomTkinter multi-port dashboard
+├── monitor.py                     Text monitor for Zigbee log output
+├── echo.py                        Simple USB Serial/JTAG echo test utility
+├── partitions.csv                 Custom NVS, application, and Zigbee storage partitions
+├── sdkconfig.defaults              Default ESP-IDF/Zigbee settings
+└── CMakeLists.txt                 ESP-IDF project definition
 ```
 
+## Hardware
+
+The firmware is configured for:
+
+- ESP32-C6 development board.
+- A Zigbee sensor node compatible with the custom cluster described below.
+- Optional SX1262/RA-01S LoRa hardware connected over SPI.
+- Optional SPI microSD card. The SD card chip-select is hard-coded to GPIO 19.
+- USB connection to the host computer through the ESP32-C6 USB Serial/JTAG interface.
+
+The LoRa GPIOs and radio settings are configurable through `idf.py menuconfig`. The checked-in `sdkconfig` selects SPI2 and currently uses 868 MHz, SF9, bandwidth setting 3, coding rate 4/5, CRC enabled, TCXO enabled, and up to 22 dBm transmit power. Verify these settings and local radio regulations before using the hardware.
+
+## Software requirements
+
+- ESP-IDF **5.4.1** is the checked-in configuration; `main/idf_component.yml` requires ESP-IDF `>=5.0.0`.
+- ESP-IDF Component Manager dependencies:
+  - `espressif/esp-zboss-lib` `~1.6.0`
+  - `espressif/esp-zigbee-lib` `~1.6.0`
+- Python tools require `pyserial`; `gui_monitor.py` additionally requires `customtkinter`.
+
+There is no `requirements.txt` in this repository, so install the Python packages manually, for example:
+
+```bash
+python -m pip install pyserial customtkinter
+```
+
+## Build and flash
+
+From the repository root, with ESP-IDF exported:
+
+```bash
+idf.py set-target esp32c6
+idf.py menuconfig
+idf.py build
+idf.py -p PORT flash monitor
+```
+
+For a clean Zigbee/NVS state, erase the flash before flashing:
+
+```bash
+idf.py -p PORT erase-flash
+idf.py -p PORT build flash monitor
+```
+
+Use `idf.py menuconfig` to review the SX1262 pins/frequency, ESP-NOW settings, Zigbee settings, and the selected application startup path. The project uses a custom partition table from `partitions.csv` and a 4 MB flash configuration in the checked-in `sdkconfig`.
+
+## Runtime startup
+
+`app_main()` performs the following initialization:
+
+1. Initializes NVS and the activity LED.
+2. Initializes a shared SPI bus for the LoRa radio and SD card.
+3. Attempts to mount the SD card and starts the CSV logger when mounting succeeds.
+4. Starts the Zigbee coordinator because `ZIGBEE_COORDINATOR` is defined.
+5. Starts the USB Serial/JTAG command task and serial report task.
+6. A diagnostics task exists but is only started when `RUNTIME_TEST` is enabled at compile time.
+
+The alternative startup branches in `app_main.c` can start ESP-NOW and LoRa, and a coexistence test branch can start all three wireless stacks, but those branches are disabled in the checked-in source.
+
+## Zigbee coordinator
+
+The Zigbee implementation is based on the ESP-Zigbee HA thermostat example, configured as a coordinator on primary channel 13 with up to 10 children. When a device announces itself, the coordinator searches for a temperature-measurement endpoint and requests bindings for the standard temperature cluster and custom cluster `0xFF01`.
+
+The custom cluster attributes implemented in `main/zigbee_task/zigbee_task.c` are:
+
+| Attribute | ID | Type | Stored field |
+|---|---:|---|---|
+| GNSS satellites | `0x0001` | U8 | `gnss_sats` |
+| Latitude | `0x0002` | S32 | `latitude`, degrees × 1,000,000 |
+| Longitude | `0x0003` | S32 | `longitude`, degrees × 1,000,000 |
+| Current | `0x0004` | U16 | `current_ua` |
+| Accelerometer X/Y/Z | `0x0005`–`0x0007` | U16 | `accel_x/y/z` |
+| Set protocol | `0x0008` | defined but not parsed in reports | — |
+| Sleep interval | `0x0009` | written by commands | — |
+| Battery voltage | `0x000A` | U16 | `batt_level` |
+| Temperature | `0x000B` | U16 | `temperature` |
+| Start GNSS | `0x000C` | written by command | — |
+
+Read responses and attribute reports update a per-node shadow table with a maximum of 32 Zigbee nodes. Each successfully parsed custom-cluster attribute generates a sensor report.
+
+## ESP-NOW implementation
+
+The ESP-NOW code uses the configured Wi-Fi channel, CRC16 validation, a receive queue, and a maximum address map of 32 nodes. It responds to broadcast discovery packets with `MSG_TYPE_DISCOVERY_ACK`, maps each node's 16-bit short address to its six-byte MAC address, accepts sensor uplinks, and routes them to the shared report queue. Host commands are converted to ESP-NOW downlink payloads and sent to known MAC mappings.
+
+The checked-in configuration selects station mode, channel 1, long-range Wi-Fi enabled, and power save disabled. These settings are only used if the ESP-NOW startup path is enabled.
+
+## LoRa/SX1262 implementation
+
+`components/ra01s` provides the SX126x SPI driver. `main/lora` adds a GPIO DIO1 ISR that posts events to a FreeRTOS queue and a LoRa state-machine task that:
+
+- Keeps the radio in continuous receive mode.
+- Parses fixed-size `uplink_payload_t` frames.
+- Sends an immediate `MSG_TYPE_ACK` for sensor-data uplinks.
+- Reports valid sensor data with RSSI and uptime.
+- Sends host commands synchronously and waits up to 500 ms for an ACK.
+- Retries a command up to three times, deferring one additional serial command while waiting.
+
+The shared SPI bus is initialized in `app_main.c`; the radio driver adds the SX1262 device at 9 MHz. The implementation does not contain the `s_lora_spi_mutex` described by the previous README.
+
+## Shared data structures and serial protocol
+
+The wire structures are packed C structs in `main/protocol.h` and `main/serial/usb_serial.h`.
+
+### Sensor uplink: `uplink_payload_t`
+
+The payload is 30 bytes, little-endian, and contains:
+
+- 6-byte IEEE/MAC address.
+- 16-bit short address.
+- 8-bit message type.
+- Battery level in mV.
+- Temperature in the node's scaled integer representation.
+- GNSS satellite count.
+- Signed latitude and longitude in degrees × 1,000,000.
+- Current and raw X/Y/Z accelerometer values.
+
+### Gateway report: `serial_report_t`
+
+Reports are written as 78-byte binary frames to USB Serial/JTAG:
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 1 | Sync byte `0xAA` |
+| 1 | 1 | Sync byte `0x55` |
+| 2 | 1 | Payload length; sensor reports use `sizeof(uplink_payload_t)` |
+| 3 | 1 | Protocol: `0` ESP-NOW, `1` Zigbee, `2` LoRa |
+| 4 | 1 | Report type: `1` sensor data, `2` node status, `3` log message |
+| 5 | 2 | Source short address |
+| 7 | 1 | RSSI in dBm |
+| 8 | 4 | Gateway uptime in milliseconds |
+| 12 | 64 | Protocol-specific payload area |
+| 76 | 2 | 16-bit sum of bytes 0–75 |
+
+`serial_report_task()` calculates the checksum and sends the complete packed structure. Reports are queued with a depth of 20; dropped reports are counted in `g_dropped_serial_reports`.
+
+### Host command: `serial_command_t`
+
+Commands are 12-byte packed structures beginning with `0xAA 0x55`. The command task validates the sync bytes and routes commands by protocol:
+
+| Command | Value |
+|---|---:|
+| `CHANGE_REPORT_CONFIG` | `0x00` |
+| `READ_ATTRIBUTE` | `0x01` |
+| `CHANGE_PROTOCOL` | `0x02` |
+| `CHANGE_SLEEP_INTERVAL` | `0x03` |
+| `START_GNSS` | `0x04` |
+
+Zigbee commands issue ZCL read, write, or reporting-configuration requests. ESP-NOW and LoRa commands are converted to their respective downlink payloads.
+
+## SD-card logging
+
+When the SD card mounts successfully, `sd_logger.c` creates `/sdcard/log_N.csv`, where `N` increments in NVS under the `storage/boot_count` key. Sensor reports are queued to a 20-entry logger queue and written as CSV rows containing timestamp, node ID, protocol, RSSI, battery, temperature, GNSS, location, and accelerometer values. SD logging stops after three consecutive file or write failures.
+
+## Python tools
+
+### Dashboard
+
+`gui_monitor.py` is a CustomTkinter dashboard that can read one or more serial ports, validate report checksums, display sensor data, send commands, and write local CSV/TXT logs.
+
+```bash
+python gui_monitor.py --wifi PORT --zigbee PORT --lora PORT --baudrate 115200
+```
+
+All protocol-port arguments are optional. If none are supplied, the script selects the last detected serial port and treats it as the ESP-NOW/Wi-Fi port. If the same physical port is supplied for multiple protocols, the dashboard shares the connection.
+
+### Text monitor
+
+`monitor.py` parses matching Zigbee attribute-report log lines:
+
+```bash
+python monitor.py -p PORT -b 115200
+python monitor.py -p PORT -b 115200 --all
+```
+
+### Echo test
+
+`echo.py` is a development utility with a hard-coded default port of `COM6`; edit `COM_PORT` before use:
+
+```bash
+python echo.py
+```
+
+## Known limitations and maintenance notes
+
+- The default firmware startup is Zigbee-only despite the repository containing ESP-NOW and LoRa code.
+- The GUI and firmware must use the same packed structure definitions. Check `gui_monitor.py` whenever `uplink_payload_t` or `serial_report_t` changes.
+- `sdkconfig` is generated by ESP-IDF; use `idf.py menuconfig` rather than editing it manually.
+- No automated test suite is included.
+- The repository contains a checked-in `__pycache__` artifact; it is not required to build or run the project.
